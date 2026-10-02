@@ -1,0 +1,26 @@
+# 플랫폼 1개 = AppProject 1개 — ArgoCD 에서 프로젝트 필터로 플랫폼 서비스 전체를 한 번에 봄.
+# (루트 app-of-apps 와 appset CR 은 spoke 프로젝트 — 허브 상주 관리 리소스라 성격이 다름)
+# project 는 그냥 필터 — 엄격한 화이트리스트 유지보수 안 함 (격리는 Kyverno 테넌시가 담당).
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: demo-app
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  description: 타이핑런 잉글리시 (루트 + 서비스 전부)
+
+  sourceRepos:
+    - git@github.com:your-org/eks-hub-spoke-gitops.git
+
+  destinations:
+    - name: "demo-*" # 서비스가 뜨는 워크로드 클러스터들 (루트·appset CR 은 spoke 프로젝트 소속이라 여긴 서비스만)
+      namespace: "demo-app-*" # 플랫폼-env (demo-app-dev/-prod) — 엉뚱한 ns 로 새는 실수만 sync 에러로 잡아줌
+
+  clusterResourceWhitelist:
+    - group: "*"
+      kind: "*"
+  namespaceResourceWhitelist:
+    - group: "*"
+      kind: "*"

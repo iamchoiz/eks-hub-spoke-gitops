@@ -1,0 +1,23 @@
+karpenter:
+  replicas: 1 # system 노드 1개 — replica 2 면 hostname antiAffinity 로 Pending (짝 조건)
+
+  serviceAccount:
+    name: karpenter # 모듈의 Pod Identity association 이 이 SA(kube-system/karpenter)에 role 붙임 (IRSA annotation 불필요)
+
+  settings:
+    clusterName: demo-hub-01
+    interruptionQueue: demo-hub-01-karpenter # 모듈이 만든 SQS
+
+  # system 노드에 CriticalAddonsOnly taint 가 있어 tolerate 해야 뜬다
+  tolerations:
+    - key: CriticalAddonsOnly
+      operator: Exists
+
+  # affinity 는 차트 기본값 유지: karpenter.sh/nodepool DoesNotExist
+  # (Karpenter 가 자기가 만든 노드에 스스로 뜨는 것을 막음)
+
+  controller:
+    resources:
+      requests:
+        cpu: 200m
+        memory: 256Mi

@@ -1,0 +1,50 @@
+argo-cd:
+  global:
+    # system 노드그룹에 CriticalAddonsOnly taint 가 있다 — 모든 컴포넌트가 tolerate 해야 뜬다
+    tolerations:
+      - key: CriticalAddonsOnly
+        operator: Exists
+
+  configs:
+    params:
+      # ALB 가 TLS 종료(443, ACM) → argocd-server 로는 HTTP 백엔드. 그래서 insecure 유지 (표준 패턴).
+      server.insecure: true
+
+    # ⭐ GitHub SSO (2026-09-26) — 내장 Dex 의 GitHub connector. oauth2-proxy 불필요.
+    # client id/secret 은 git 에 없음 — ESO 가 SM(demo/platform/hub)에서 만든 argocd-github-sso 시크릿을
+    # $<시크릿명>:<키> 문법으로 참조 (시크릿에 app.kubernetes.io/part-of: argocd 라벨 필수 — ES template 이 붙임).
+    cm:
+      url: https://argocd.eks.example.com # dex 콜백 리다이렉트 기준 URL
+      admin.enabled: true # 로컬 admin 유지 = break-glass (SSO 죽어도 들어갈 문)
+      dex.config: |
+        connectors:
+          - type: github
+            id: github
+            name: GitHub
+            config:
+              clientID: $argocd-github-sso:client_id
+              clientSecret: $argocd-github-sso:client_secret
+              useLoginAsID: true
+              # org 전환 시: values-accounts-org.yaml 이 이 dex.config 를 통째로 override (orgs 제한 포함)
+
+    # RBAC(계정/권한 장부)은 values-accounts.yaml 로 분리 — 사람 관리는 그 파일만 커밋
+
+  # B7 — ALB Ingress. group.name=demo-hub 로 Grafana 와 ALB 1개 공유.
+  server:
+    ingress:
+      enabled: true
+      ingressClassName: alb
+      hostname: argocd.eks.example.com
+      path: /
+      pathType: Prefix
+      annotations:
+        alb.ingress.kubernetes.io/scheme: internet-facing
+        alb.ingress.kubernetes.io/target-type: ip
+        alb.ingress.kubernetes.io/group.name: demo-hub # ← Grafana 와 동일 = ALB 공유
+        alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
+        alb.ingress.kubernetes.io/ssl-redirect: "443" # HTTP→HTTPS 강제
+        # certificate-arn 은 생략 — ALB Controller 가 host 매칭 ACM(*.eks.example.com) 자동 부착
+        alb.ingress.kubernetes.io/backend-protocol: HTTP
+
+  # HA 는 켜지 않는다 (기본). HA 전환도 나중 학습 항목.
+  # ApplicationSet 컨트롤러는 기본 활성 — cluster generator(C2)에 필요하므로 끄지 않는다.

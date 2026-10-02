@@ -1,0 +1,12 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: gp3
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
+provisioner: ebs.csi.aws.com
+volumeBindingMode: WaitForFirstConsumer # 파드 스케줄된 AZ 에 볼륨 생성 (AZ 미스매치 방지)
+allowVolumeExpansion: true
+parameters:
+  type: gp3
+  encrypted: "true"

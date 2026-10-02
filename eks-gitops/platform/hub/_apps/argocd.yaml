@@ -1,0 +1,25 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: argocd
+  namespace: argocd
+spec:
+  project: hub
+  source:
+    repoURL: git@github.com:your-org/eks-hub-spoke-gitops.git
+    path: platform/hub/argocd
+    targetRevision: main
+    helm:
+      valueFiles: # 명시하면 기본값(values.yaml)이 사라지므로 둘 다 적는다
+        - values.yaml
+        - values-accounts.yaml # 계정/권한 장부 (SSO RBAC)
+  destination:
+    server: https://kubernetes.default.svc # in-cluster (허브 자신)
+    namespace: argocd
+  syncPolicy:
+    automated:
+      selfHeal: true
+      prune: true # 자기 자신 — prune 사고 방지로 끈다
+    syncOptions:
+      - ServerSideApply=true # 큰 CRD(applicationsets 등) annotation 제한 회피
+      - CreateNamespace=true

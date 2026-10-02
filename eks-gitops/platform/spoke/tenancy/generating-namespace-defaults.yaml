@@ -1,0 +1,46 @@
+# 테넌트 네임스페이스 생성 시 ResourceQuota + LimitRange 자동 부착.
+# Kyverno 1.19 CEL GeneratingPolicy — generator.Apply(ns, [resources]) 로 생성.
+# (NetworkPolicy default-deny 는 뺌 — DNS 마비 위험. 네트워크 격리는 나중에 allow-dns 포함해서 별도로)
+# 시스템/플랫폼 ns 는 matchConditions 로 제외.
+apiVersion: policies.kyverno.io/v1
+kind: GeneratingPolicy
+metadata:
+  name: namespace-defaults
+spec:
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE"]
+        resources: ["namespaces"]
+  matchConditions:
+    - name: exclude-system-namespaces
+      expression: >-
+        !(object.metadata.name in [
+          'kube-system','kube-public','kube-node-lease','default','argocd',
+          'kyverno','keda','cert-manager','external-secrets','external-dns','monitoring','argo-rollouts','logging'
+        ])
+  variables:
+    - name: ns
+      expression: "object.metadata.name"
+  generate:
+    - expression: >-
+        generator.Apply(variables.ns, [
+          {
+            "apiVersion": "v1", "kind": "ResourceQuota",
+            "metadata": {"name": "default-quota", "namespace": variables.ns},
+            "spec": {"hard": {
+              "requests.cpu": "4", "requests.memory": "8Gi",
+              "limits.memory": "8Gi", "pods": "50"
+            }}
+          },
+          {
+            "apiVersion": "v1", "kind": "LimitRange",
+            "metadata": {"name": "default-limits", "namespace": variables.ns},
+            "spec": {"limits": [{
+              "type": "Container",
+              "default": {"memory": "512Mi"},
+              "defaultRequest": {"cpu": "100m", "memory": "128Mi"}
+            }]}
+          }
+        ])

@@ -1,0 +1,8 @@
+apiVersion: v2
+name: karpenter
+version: 0.1.0
+
+dependencies:
+  - name: karpenter
+    version: "1.9.2" # 허브와 동일 버전 (k8s 1.34 호환). F 단계에서 같이 업그레이드
+    repository: oci://public.ecr.aws/karpenter

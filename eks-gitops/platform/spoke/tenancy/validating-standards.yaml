@@ -1,0 +1,106 @@
+# 워크로드 표준 검증 (Kyverno 1.19 CEL ValidatingPolicy). Audit 로 시작 → 위반 0 확인 후 2026-09-24 Deny 승격 완료.
+# matchConditions 로 시스템/플랫폼 ns 제외 — 테넌트 워크로드에만 적용(안 그러면 플랫폼 파드에 위반 스팸,
+# Deny 승격 시 플랫폼 마비). 새 플랫폼 애드온 ns 생기면 이 목록에 추가. (GeneratingPolicy 제외목록과 동일)
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: require-resource-requests
+spec:
+  validationActions: [Deny] # 2026-09-24 승격 — 위반 0 확인 후 Audit→Deny
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["pods"]
+  matchConditions:
+    - name: exclude-platform-namespaces
+      expression: >-
+        !(namespaceObject.metadata.name in [
+          'kube-system','kube-public','kube-node-lease','default','argocd',
+          'kyverno','keda','cert-manager','external-secrets','external-dns','monitoring','argo-rollouts','logging'
+        ])
+  validations:
+    - expression: >-
+        object.spec.containers.all(c,
+          has(c.resources) && has(c.resources.requests) &&
+          'cpu' in c.resources.requests && 'memory' in c.resources.requests)
+      message: "모든 컨테이너에 cpu·memory resource request 필수 (스케줄링·QoS)"
+---
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: disallow-latest-tag
+spec:
+  validationActions: [Deny]
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["pods"]
+  matchConditions:
+    - name: exclude-platform-namespaces
+      expression: >-
+        !(namespaceObject.metadata.name in [
+          'kube-system','kube-public','kube-node-lease','default','argocd',
+          'kyverno','keda','cert-manager','external-secrets','external-dns','monitoring','argo-rollouts','logging'
+        ])
+  validations:
+    - expression: >-
+        object.spec.containers.all(c,
+          !c.image.endsWith(':latest') && (c.image.contains('@') || c.image.matches(':[^/]+$')))
+      message: "이미지에 명시적 태그·digest 필수, latest 금지 (아티팩트 불변성)"
+---
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: require-env-label
+spec:
+  validationActions: [Deny]
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["pods"]
+  matchConditions:
+    - name: exclude-platform-namespaces
+      expression: >-
+        !(namespaceObject.metadata.name in [
+          'kube-system','kube-public','kube-node-lease','default','argocd',
+          'kyverno','keda','cert-manager','external-secrets','external-dns','monitoring','argo-rollouts','logging'
+        ])
+  validations:
+    - expression: >-
+        has(object.metadata.labels) && 'env' in object.metadata.labels &&
+        object.metadata.labels['env'] in ['prod', 'nonprod']
+      message: "env 라벨(prod|nonprod) 필수 — NodePool taint 매칭·테넌시 격리용"
+---
+# 시간대 표준 정책 (2026-09-27 운영 결정): 자사 서비스는 전부 KST — "UTC 가 더 헷갈린다".
+# 골든 차트가 TZ=Asia/Seoul 을 자동 주입하므로 자사 앱은 자동 준수. 이 정책은 그 표준의 감시자.
+# Audit 시작 (C5 절차: 위반 0 확인 후 Deny 승격) — upstream 데모(online-boutique 등)는 TZ 없어 위반 뜰 수 있음.
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: require-kst-timezone
+spec:
+  validationActions: [Audit]
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["pods"]
+  matchConditions:
+    - name: exclude-platform-namespaces
+      expression: >-
+        !(namespaceObject.metadata.name in [
+          'kube-system','kube-public','kube-node-lease','default','argocd',
+          'kyverno','keda','cert-manager','external-secrets','external-dns','monitoring','argo-rollouts','logging'
+        ])
+  validations:
+    - expression: >-
+        object.spec.containers.all(c,
+          has(c.env) && c.env.exists(e, e.name == 'TZ' && has(e.value) && e.value == 'Asia/Seoul'))
+      message: "TZ=Asia/Seoul env 필수 — 시간대 표준 정책 (전 서비스 KST, 골든 차트가 자동 주입)"

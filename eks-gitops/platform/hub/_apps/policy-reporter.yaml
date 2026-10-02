@@ -1,0 +1,32 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: policy-reporter
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: hub
+  sources:
+    - repoURL: https://kyverno.github.io/policy-reporter
+      chart: policy-reporter
+      targetRevision: 3.8.1 # 스포크 core appset 과 동일 버전 유지
+      helm:
+        valueFiles:
+          - $values/platform/hub/policy-reporter/values.yaml
+    - repoURL: git@github.com:your-org/eks-hub-spoke-gitops.git
+      targetRevision: main
+      ref: values
+    - repoURL: git@github.com:your-org/eks-hub-spoke-gitops.git
+      targetRevision: main
+      path: platform/hub/policy-reporter/templates # 부속 raw 매니페스트 (oauth ExternalSecret)
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring # 관측 성격이라 동거 (허브에 kyverno ns 없음)
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    automated:
+      selfHeal: true
+      prune: true

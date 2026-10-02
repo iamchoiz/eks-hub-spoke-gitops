@@ -1,0 +1,15 @@
+variable "region" {}
+variable "resource_prefix" {}
+variable "account_id" {}
+variable "default_tags" {}
+variable "parent_zone_name" {}
+variable "eks_zone_name" {}
+variable "delegation_ttl" {}
+variable "ssm_namespace" {}
+variable "eks_zone_comment" {}
+variable "acm_validation_method" {}
+variable "acm_validation_record_ttl" {}
+variable "parent_zone_private" {}
+variable "delegation_record_type" {}
+variable "ssm_param_type" {}
+variable "acm_validation_allow_overwrite" {}

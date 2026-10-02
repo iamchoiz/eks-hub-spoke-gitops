@@ -1,0 +1,20 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: karpenter
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: hub
+  source:
+    repoURL: git@github.com:your-org/eks-hub-spoke-gitops.git
+    path: platform/hub/karpenter
+    targetRevision: main
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kube-system # Pod Identity association 이 kube-system/karpenter 에 걸려있음
+  syncPolicy:
+    syncOptions:
+      - ServerSideApply=true # Karpenter CRD 가 커서 client-side annotation 제한 회피
+      - CreateNamespace=true

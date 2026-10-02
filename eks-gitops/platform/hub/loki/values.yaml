@@ -1,0 +1,95 @@
+# E1 — Loki (허브 중앙 로그). SimpleScalable(SSD) 모드 최소 사양 — 운영 표준 구조를 최소 대수로 (운영 결정 2026-09-27).
+#   write ×2 (수집 — 롤링/장애 중에도 유입 유지), read ×1 (조회), backend ×1 (compactor·retention)
+#   스케일업 = 각 replicas 만 증설. SingleBinary 대비 파드 +3, 리소스 요청 합 ~0.5CPU/1.3Gi.
+# S3 장기보관: demo-loki-logs (A단계 기존재). 자격증명 없음 = Pod Identity (thanos 와 동일 패턴).
+# 수집은 스포크 fluent-bit → 내부 NLB(loki.eks.example.com) → gateway → write.
+deploymentMode: SimpleScalable
+
+loki:
+  auth_enabled: false # 내부 전용 (VPC 내부 NLB + SG) — 멀티테넌트 아님
+  commonConfig:
+    replication_factor: 1 # SingleBinary 1대
+  storage:
+    type: s3
+    bucketNames:
+      chunks: demo-loki-logs
+      ruler: demo-loki-logs
+      admin: demo-loki-logs
+    s3:
+      region: ap-northeast-2
+      # 키 없음 → SDK 기본 크레덴셜 체인 = Pod Identity (demo-hub-01-loki role, TF)
+  schemaConfig:
+    configs:
+      - from: "2026-01-01"
+        store: tsdb
+        object_store: s3
+        schema: v13
+        index:
+          prefix: loki_index_
+          period: 24h
+  limits_config:
+    retention_period: 48h # 30일 (S3 는 싸지만 학습용은 이 정도로)
+  compactor:
+    retention_enabled: true
+    delete_request_store: s3
+
+serviceAccount:
+  name: loki # Pod Identity association 과 일치 (TF: monitoring/loki)
+
+# ── SSD 3덩어리 (최소 사양) ──
+write: # ingester — 로그 수신·WAL·S3 플러시. 1대(운영 결정) — 재시작 순간 유입 끊기나 fluent-bit 재시도 버퍼가 흡수
+  replicas: 1
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { memory: 256Mi }
+  persistence:
+    storageClass: gp3
+    size: 10Gi # WAL (장기는 S3)
+read: # querier — Grafana 조회 전담. 조회 느려지면 여기만 증설
+  replicas: 1
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { memory: 256Mi }
+backend: # compactor·retention·ruler
+  replicas: 1
+  resources:
+    requests: { cpu: 50m, memory: 256Mi }
+    limits: { memory: 256Mi }
+  persistence:
+    storageClass: gp3
+    size: 10Gi
+
+# gateway(nginx) = 수집·조회 단일 진입점. 내부 NLB 로 노출 — 스포크 fluent-bit 가 이 주소로 push.
+# NLB 어노테이션은 C6 thanos-sidecar 교훈 그대로 (cross-zone on + DNS 를 타겟헬스와 분리 — NXDOMAIN 함정)
+gateway:
+  enabled: true
+  replicas: 1
+  service:
+    type: LoadBalancer
+    annotations:
+      service.beta.kubernetes.io/aws-load-balancer-type: external
+      service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: ip
+      service.beta.kubernetes.io/aws-load-balancer-scheme: internal
+      service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+      external-dns.alpha.kubernetes.io/hostname: loki.eks.example.com
+      external-dns.alpha.kubernetes.io/aws-evaluate-target-health: "false"
+  resources:
+    requests: { cpu: 20m, memory: 32Mi }
+    limits: { memory: 64Mi }
+
+# ── 다른 모드/부속 off (캐시 memcached 는 GB급 요청 — 필요해지면 그때) ──
+singleBinary:
+  replicas: 0
+chunksCache:
+  enabled: false
+resultsCache:
+  enabled: false
+lokiCanary:
+  enabled: false # 자가진단 파드 — 학습 규모엔 불필요
+test:
+  enabled: false
+monitoring:
+  selfMonitoring:
+    enabled: false
+    grafanaAgent:
+      installOperator: false

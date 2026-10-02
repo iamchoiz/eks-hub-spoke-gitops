@@ -1,0 +1,36 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: metrics-server
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - clusters:
+        selector:
+          matchLabels:
+            demo.io/workload: "true"
+  template:
+    metadata:
+      name: "metrics-server-{{.name}}"
+      annotations:
+        argocd.argoproj.io/sync-wave: "0"
+    spec:
+      project: spoke
+      source:
+        repoURL: https://kubernetes-sigs.github.io/metrics-server/
+        chart: metrics-server
+        targetRevision: 3.12.2 # 허브와 동일
+        helm:
+          valuesObject:
+            replicas: 1
+      destination:
+        server: "{{.server}}"
+        namespace: kube-system
+      syncPolicy:
+        syncOptions:
+          - CreateNamespace=true
+        automated:
+          selfHeal: true
+          prune: true

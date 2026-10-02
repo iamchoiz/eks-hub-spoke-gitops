@@ -1,0 +1,102 @@
+serviceMonitor:
+  enabled: true
+  additionalLabels:
+    release: kube-prometheus-stack # kps Prometheus 의 serviceMonitorSelector 가 이 라벨만 수집
+
+# Pod Identity 라 자격증명 없음 (bucket/region 뿐) → git 평문 OK
+# value 는 반드시 문자열 블록(|-) — map 으로 주면 차트가 무시하고 FILESYSTEM 기본값 사용
+objstoreConfig:
+  create: true
+  value: |-
+    type: S3
+    config:
+      bucket: demo-thanos-metrics
+      endpoint: s3.ap-northeast-2.amazonaws.com
+      region: ap-northeast-2
+      aws_sdk_auth: true # Pod Identity 는 SDK 기본 크레덴셜 체인 필요
+
+# ── 스포크 연결 (C6) — Query fan-out 대상에 스포크 Prometheus sidecar StoreAPI 추가 ──
+# 실시간(스포크 로컬 TSDB)은 sidecar 가 서빙, 과거(S3)는 허브 Store Gateway 가 서빙.
+# dns+ : NLB DNS 의 A 레코드를 주기적으로 재해석 → NLB IP 바뀌어도 자동 반영.
+additionalEndpoints:
+  # per-cluster NLB (thanos-sidecar-<cluster>). 스포크마다 자기 이름 레코드 → flip 불필요.
+  # ⭐ 신규 스포크 온보딩 = 여기 한 줄 추가.
+  - dns+thanos-sidecar-demo-eks-02.eks.example.com:10901
+
+# ── 읽기 경로 (무상태 → HPA 로 자동 확장) ──
+query:
+  replicas: 1
+  autoscaling: # 무상태라 부하 오르면 자동 증가
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 1
+    targetCPUUtilizationPercentage: 70
+  resources:
+    requests: { cpu: 50m, memory: 256Mi }
+    limits: { memory: 256Mi }
+
+queryFrontend: # 쿼리 캐싱·분할 → 읽기 부하 분산 (무상태, HPA)
+  enabled: true
+  replicas: 1
+  autoscaling:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 1
+    targetCPUUtilizationPercentage: 70
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { memory: 128Mi }
+
+storeGateway: # S3 과거 조회 (상태 — HPA 아님, 필요시 수동 샤딩)
+  replicas: 1
+  persistence:
+    enabled: true
+    storageClass: gp3 # 차트 기본 "standard" 는 없는 SC → 반드시 지정
+    size: 5Gi
+  resources:
+    # Store Gateway 는 S3 블록의 index-header 를 메모리에 들고 있어 블록 수에 비례해 증가.
+    # 256Mi 는 블록 62개에서 OOMKill(137) crashloop → 512Mi. 데이터 더 쌓이면 추가 상향/샤딩.
+    requests: { cpu: 50m, memory: 384Mi }
+    limits: { memory: 512Mi }
+
+# ── 쓰기 경로 ──
+receive:
+  enabled: true
+  replicationFactor: 1 # 시계열을 2개 ingestor 에 복제 → ingestor 1대 죽어도 유실 X (HA)
+  retention: 48h # ingestor 로컬 TSDB — S3 업로드 전 버퍼
+  router: # 무상태 라우터 — remote_write 받아 hashring 으로 분배. HPA 로 트래픽 자동 대응
+    replicas: 1
+    autoscaling:
+      enabled: true
+      minReplicas: 1
+      maxReplicas: 1
+      targetCPUUtilizationPercentage: 80
+    resources:
+      requests: { cpu: 100m, memory: 128Mi }
+      limits: { memory: 128Mi }
+  ingestor: # 상태(TSDB) — HPA 아님. replicas=샤드 수, hashring 차트가 자동 생성.
+    # replicas 3 + RF 2 → 시계열 분산(각 ~2/3) + HA. 트래픽 늘면 replicas 수동 상향(계획적 resharding).
+    # 비용 줄이려면 replicas 2 + replicationFactor 1(샤딩만) 또는 1(최소) 로.
+    replicas: 1
+    persistence:
+      enabled: true
+      storageClass: gp3
+      size: 8Gi # WAL + 로컬 블록
+    resources:
+      # 들어오는 시계열의 TSDB head 를 메모리에 들고 있어 메모리-heavy. 512Mi 는 OOMKill → 1Gi.
+      requests: { cpu: 100m, memory: 1Gi }
+      limits: { memory: 1Gi }
+
+compact: # 버킷당 반드시 1개 (2개면 블록 손상 — HPA/replica 증가 절대 금지)
+  enabled: true
+  persistence:
+    enabled: true
+    storageClass: gp3
+    size: 10Gi # 컴팩션 작업공간
+  extraArgs:
+    - --retention.resolution-raw=30d
+    - --retention.resolution-5m=60d
+    - --retention.resolution-1h=180d
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { memory: 256Mi }

@@ -1,0 +1,15 @@
+{{- if not .Values.clusterName }}{{ fail "clusterName 미주입 — appset helm.valuesObject 확인" }}{{- end }}
+apiVersion: karpenter.k8s.aws/v1
+kind: EC2NodeClass
+metadata:
+  name: default
+spec:
+  amiSelectorTerms:
+    - alias: bottlerocket@1.65.0 # 허브와 동일 버전 핀 (@latest 금지). F5 에서 drift 교체 연습
+  role: {{ .Values.clusterName }}-karpenter-node # eks-cluster 모듈이 만든 노드 role (클러스터별)
+  subnetSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: demo # 서브넷은 공유 자원 (클러스터 이름 아님)
+  securityGroupSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: {{ .Values.clusterName }} # 클러스터 SG 태그 (모듈이 클러스터명으로 붙임)

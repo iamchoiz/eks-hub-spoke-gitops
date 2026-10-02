@@ -1,0 +1,39 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: thanos # release 이름 = SA 이름 파생원 (thanos-compact 등) — Pod Identity association 과 일치해야 함
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2" # kube-prometheus-stack(1) 뒤 — ServiceMonitor CRD 필요
+spec:
+  project: hub
+  sources:
+    - repoURL: https://stevehipwell.github.io/helm-charts
+      chart: thanos
+      targetRevision: 1.21.1 # app v0.39.2 — 최신(1.24.x)에서 3마이너 뒤 (업그레이드 연습용)
+      helm:
+        valueFiles:
+          - $values/platform/hub/thanos/values.yaml
+    - repoURL: git@github.com:your-org/eks-hub-spoke-gitops.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - RespectIgnoreDifferences=true # 아래 ignoreDifferences 를 auto-sync 루프에서도 존중
+    automated:
+      selfHeal: true
+      prune: true
+  # StatefulSet volumeClaimTemplates 의 apiVersion/kind 는 API 서버가 정규화로 떼어내
+  # desired(helm)와 live 가 영구 불일치 → 영원한 OutOfSync. 이 두 필드만 정밀 무시.
+  # storageClass·size·accessModes 등 나머지는 그대로 감지된다.
+  ignoreDifferences:
+    - group: apps
+      kind: StatefulSet
+      jqPathExpressions:
+        - '.spec.volumeClaimTemplates[]?.apiVersion'
+        - '.spec.volumeClaimTemplates[]?.kind'

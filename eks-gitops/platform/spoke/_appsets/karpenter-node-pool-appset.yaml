@@ -1,0 +1,37 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: karpenter-node-pool
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - clusters:
+        selector:
+          matchLabels:
+            demo.io/workload: "true"
+  template:
+    metadata:
+      name: "karpenter-node-pool-{{.name}}"
+      annotations:
+        argocd.argoproj.io/sync-wave: "1" # karpenter 컨트롤러/CRD(wave 0) 뒤
+    spec:
+      project: spoke
+      source:
+        repoURL: git@github.com:your-org/eks-hub-spoke-gitops.git
+        path: platform/spoke/karpenter/node-pool
+        targetRevision: main
+        helm:
+          # ec2nodeclass 의 node role·SG discovery 태그가 클러스터별 — {{.name}} 주입
+          valuesObject:
+            clusterName: "{{.name}}"
+      destination:
+        server: "{{.server}}"
+        namespace: kube-system
+      syncPolicy:
+        syncOptions:
+          - ServerSideApply=true
+        automated:
+          selfHeal: true
+          prune: false

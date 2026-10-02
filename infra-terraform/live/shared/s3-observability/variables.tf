@@ -1,0 +1,16 @@
+variable "region" {}
+variable "account_id" {}
+variable "resource_prefix" {}
+variable "default_tags" {}
+variable "buckets" {}
+variable "sse_algorithm" {}
+variable "abort_incomplete_mpu_days" {}
+variable "ssm_namespace" {}
+variable "block_public_access" {}
+variable "bucket_key_enabled" {}
+variable "abort_mpu_rule_id" {}
+variable "policy_name_suffix" {}
+variable "bucket_list_actions" {}
+variable "bucket_object_actions" {}
+variable "abort_mpu_rule_status" {}
+variable "ssm_param_type" {}

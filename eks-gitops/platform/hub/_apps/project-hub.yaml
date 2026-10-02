@@ -1,0 +1,35 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: hub
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  description: 허브 클러스터 플랫폼 컴포넌트 (ArgoCD·관측·컨트롤러·애드온)
+
+  # 허용 source — gitops repo + 허브가 쓰는 helm repo
+  sourceRepos:
+    - git@github.com:your-org/eks-hub-spoke-gitops.git
+    - https://kubernetes-sigs.github.io/metrics-server/
+    - https://charts.jetstack.io
+    - https://charts.external-secrets.io
+    - https://aws.github.io/eks-charts
+    - https://kubernetes-sigs.github.io/external-dns/
+    - https://prometheus-community.github.io/helm-charts # kube-prometheus-stack (B6)
+    - https://stevehipwell.github.io/helm-charts # thanos (B6②)
+    - https://grafana.github.io/helm-charts # loki (E1)
+    - https://kyverno.github.io/policy-reporter # policy-reporter 중앙 UI (E4)
+    # karpenter 는 gitops repo 의 umbrella chart(OCI 는 helm 이 내부 처리)라 별도 불필요
+
+  # 허용 destination — 허브(in-cluster)만. 스포크는 spoke 프로젝트가 담당.
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: "*"
+
+  clusterResourceWhitelist:
+    - group: "*"
+      kind: "*"
+  namespaceResourceWhitelist:
+    - group: "*"
+      kind: "*"

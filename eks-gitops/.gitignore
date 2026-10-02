@@ -1,0 +1,5 @@
+# Helm dependency 빌드 산물 — 워크플로/ArgoCD 가 매번 재생성
+**/charts/
+**/*.tgz
+
+.DS_Store

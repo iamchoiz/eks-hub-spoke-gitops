@@ -1,0 +1,33 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: storageclass
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - clusters:
+        selector:
+          matchLabels:
+            demo.io/workload: "true"
+  template:
+    metadata:
+      name: "storageclass-{{.name}}"
+      annotations:
+        argocd.argoproj.io/sync-wave: "0"
+    spec:
+      project: spoke
+      source:
+        repoURL: git@github.com:your-org/eks-hub-spoke-gitops.git
+        path: platform/spoke/storageclass
+        targetRevision: main
+      destination:
+        server: "{{.server}}"
+        namespace: kube-system
+      syncPolicy:
+        syncOptions:
+          - ServerSideApply=true
+        automated:
+          selfHeal: true
+          prune: true

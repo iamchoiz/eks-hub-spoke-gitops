@@ -1,0 +1,26 @@
+# online-boutique 공통 스케줄링 컴포넌트 — 각 서비스 overlay 가 components 로 참조.
+#  - amd64 고정: upstream CI 이미지(online-boutique-ci)가 amd64 단일 아키라, Karpenter 가
+#    arm64 spot 을 뽑으면 exec format error. (직접 멀티아치 빌드하는 서비스는 이 컴포넌트 빼면 됨)
+#  - nonprod NodePool 스케줄링(C5 테넌시): 앱은 platform NodePool(애드온 전용)이 아닌
+#    tainted 테넌트 풀로. pod 라벨 env=nonprod 는 require-env-label ValidatingPolicy 충족용.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+patches:
+  - target:
+      kind: Deployment
+    patch: |
+      - op: add
+        path: /spec/template/spec/nodeSelector
+        value:
+          kubernetes.io/arch: amd64
+          env: nonprod
+      - op: add
+        path: /spec/template/spec/tolerations
+        value:
+          - key: env
+            value: nonprod
+            effect: NoSchedule
+      - op: add
+        path: /spec/template/metadata/labels/env
+        value: nonprod

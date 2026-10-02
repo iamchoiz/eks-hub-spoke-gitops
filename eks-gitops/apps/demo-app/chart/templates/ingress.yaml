@@ -1,0 +1,38 @@
+{{- if .Values.ingress.enabled }}
+{{- $name := printf "demo-%s" .Values.service }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $name }} # Rollout trafficRouting.alb.ingress 가 이 이름 참조
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/group.name: demo-spoke # 스포크 앱 ALB 1개 공유 (비용)
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
+    alb.ingress.kubernetes.io/backend-protocol: HTTP
+    # ALB 헬스체크 = probe 와 동일 경로 (기본 "/" 는 앱 리다이렉트에 걸려 unhealthy — 2026-09-26 실측 교훈)
+    alb.ingress.kubernetes.io/healthcheck-path: {{ .Values.probes.path | quote }}
+    {{- if and .Values.ingress.setIdentifier (ne (toString .Values.ingress.weight) "") }}
+    # blue/green Route53 weighted (external-dns) — set-id 로 클러스터별 별개 레코드, weight 로 트래픽 분배
+    external-dns.alpha.kubernetes.io/set-identifier: {{ .Values.ingress.setIdentifier | quote }}
+    external-dns.alpha.kubernetes.io/aws-weight: {{ .Values.ingress.weight | quote }}
+    {{- end }}
+spec:
+  ingressClassName: alb
+  rules:
+    - host: {{ required "ingress.host 필수" .Values.ingress.host }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $name }}
+                port:
+                  {{- if .Values.rollout.enabled }}
+                  name: use-annotation # Rollouts 가 주입하는 actions.<stable-svc>(가중치 forward)을 ALB 가 사용
+                  {{- else }}
+                  number: 80
+                  {{- end }}
+{{- end }}

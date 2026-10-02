@@ -1,0 +1,159 @@
+# 워크로드 클러스터 NodePool 3종 (클러스터 무관 — 템플릿 변수 없음):
+#   platform(taint 없음) — 인프라 애드온(ESO·ALB·cert-manager·external-dns·metrics-server)이 뜨는 곳.
+#                          허브의 platform NodePool 과 동일 역할. 없으면 애드온이 Pending.
+#   prod(taint env=prod) / nonprod(taint env=nonprod) — tenant 워크로드용 물리 격리.
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: platform
+spec:
+  template:
+    spec:
+      # taint 없음 — toleration 없는 인프라 애드온이 여기 뜬다
+      requirements:
+        - key: kubernetes.io/arch
+          operator: In
+          values: ["amd64", "arm64"]
+        - key: kubernetes.io/os
+          operator: In
+          values: ["linux"]
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["spot"] # 허브 platform NodePool 과 동일 (학습용 spot)
+        # 2026-09-28 개편: t 전용이 arm64 에선 t4g 단일 패밀리 = 스팟 풀 4개뿐 →
+        # ICE 때 크기만 키워 도망(t4g.2xlarge 32GB 사고). 패밀리를 넓히고(스팟 다양성) 크기에 상한.
+        - key: karpenter.k8s.aws/instance-category
+          operator: In
+          values: ["t", "m", "c"]
+        - key: karpenter.k8s.aws/instance-generation
+          operator: Gt
+          values: ["2"]
+        - key: karpenter.k8s.aws/instance-cpu
+          operator: Gt
+          values: ["1"] # 1vCPU 그라비톤 medium(m8g 등, 슬롯 8개) 배제 — DS 태우면 앱슬롯 1개 부조리
+        - key: karpenter.k8s.aws/instance-memory
+          operator: Gt
+          values: ["3000"] # 4GB↑ (medium 부터)
+        - key: karpenter.k8s.aws/instance-memory
+          operator: Lt
+          values: ["9000"] # 8GB 상한 (large 급까지) — ICE 나도 xlarge+ 로 못 키움, Pending 대기가 정답
+      nodeClassRef:
+        group: karpenter.k8s.aws
+        kind: EC2NodeClass
+        name: default
+      expireAfter: 720h
+  disruption:
+    consolidationPolicy: WhenEmptyOrUnderutilized
+    consolidateAfter: 1m
+    budgets:
+      - nodes: "10%"
+  limits:
+    cpu: "16"
+---
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: prod
+spec:
+  template:
+    metadata:
+      labels:
+        env: prod
+    spec:
+      taints:
+        - key: env
+          value: prod
+          effect: NoSchedule
+      requirements:
+        - key: kubernetes.io/arch
+          operator: In
+          values: ["amd64", "arm64"]
+        - key: kubernetes.io/os
+          operator: In
+          values: ["linux"]
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["spot"]
+        # 2026-09-28 개편: t 전용이 arm64 에선 t4g 단일 패밀리 = 스팟 풀 4개뿐 →
+        # ICE 때 크기만 키워 도망(t4g.2xlarge 32GB 사고). 패밀리를 넓히고(스팟 다양성) 크기에 상한.
+        - key: karpenter.k8s.aws/instance-category
+          operator: In
+          values: ["t", "m", "c"]
+        - key: karpenter.k8s.aws/instance-generation
+          operator: Gt
+          values: ["2"]
+        - key: karpenter.k8s.aws/instance-cpu
+          operator: Gt
+          values: ["1"] # 1vCPU 그라비톤 medium(m8g 등, 슬롯 8개) 배제 — DS 태우면 앱슬롯 1개 부조리
+        - key: karpenter.k8s.aws/instance-memory
+          operator: Gt
+          values: ["3000"] # 4GB↑ (medium 부터)
+        - key: karpenter.k8s.aws/instance-memory
+          operator: Lt
+          values: ["9000"] # 8GB 상한 (large 급까지) — ICE 나도 xlarge+ 로 못 키움, Pending 대기가 정답
+      nodeClassRef:
+        group: karpenter.k8s.aws
+        kind: EC2NodeClass
+        name: default
+      expireAfter: 720h # 30일 — 노드 순환
+  disruption:
+    consolidationPolicy: WhenEmptyOrUnderutilized
+    consolidateAfter: 1m
+    budgets:
+      - nodes: "10%" # prod 는 보수적으로 동시 교체 제한
+  limits:
+    cpu: "16" # 학습용 폭주 방지
+---
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: nonprod
+spec:
+  template:
+    metadata:
+      labels:
+        env: nonprod
+    spec:
+      taints:
+        - key: env
+          value: nonprod
+          effect: NoSchedule
+      requirements:
+        - key: kubernetes.io/arch
+          operator: In
+          values: ["amd64", "arm64"]
+        - key: kubernetes.io/os
+          operator: In
+          values: ["linux"]
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["spot"] # nonprod 는 spot (비용)
+        # 2026-09-28 개편: t 전용이 arm64 에선 t4g 단일 패밀리 = 스팟 풀 4개뿐 →
+        # ICE 때 크기만 키워 도망(t4g.2xlarge 32GB 사고). 패밀리를 넓히고(스팟 다양성) 크기에 상한.
+        - key: karpenter.k8s.aws/instance-category
+          operator: In
+          values: ["t", "m", "c"]
+        - key: karpenter.k8s.aws/instance-generation
+          operator: Gt
+          values: ["2"]
+        - key: karpenter.k8s.aws/instance-cpu
+          operator: Gt
+          values: ["1"] # 1vCPU 그라비톤 medium(m8g 등, 슬롯 8개) 배제 — DS 태우면 앱슬롯 1개 부조리
+        - key: karpenter.k8s.aws/instance-memory
+          operator: Gt
+          values: ["3000"] # 4GB↑ (medium 부터)
+        - key: karpenter.k8s.aws/instance-memory
+          operator: Lt
+          values: ["9000"] # 8GB 상한 (large 급까지) — ICE 나도 xlarge+ 로 못 키움, Pending 대기가 정답
+      nodeClassRef:
+        group: karpenter.k8s.aws
+        kind: EC2NodeClass
+        name: default
+      expireAfter: 720h
+  disruption:
+    consolidationPolicy: WhenEmptyOrUnderutilized
+    consolidateAfter: 1m # nonprod 는 공격적 정리
+    budgets:
+      - nodes: "50%"
+  limits:
+    cpu: "16"

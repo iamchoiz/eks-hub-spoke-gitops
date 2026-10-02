@@ -1,0 +1,13 @@
+# ⭐ Grafana 계정/권한 장부 — 사람 추가·강등·추방은 이 파일만 커밋.
+# (SSO 배선 자체는 values.yaml 의 auth.github — strict 모드 포함. 여긴 "누구를 무슨 롤로"만)
+#
+# JMESPath 식: GitHub login → Grafana 롤(Admin/Editor/Viewer). '' 로 떨어지면 strict 가 로그인 거부 = 화이트리스트.
+# 사람 추가 예시:
+#   login == 'yyyujini' && 'Admin' || login == 'teammate1' && 'Viewer' || ''
+grafana:
+  grafana.ini:
+    auth.github:
+      role_attribute_path: >-
+        login == 'yyyujini' && 'Admin' ||
+        login == 'your-org' && 'Admin' || ''
+      # org 전환 시: 이 파일 대신 values-accounts-org.yaml 로 (_apps/kube-prometheus-stack.yaml valueFiles 교체)

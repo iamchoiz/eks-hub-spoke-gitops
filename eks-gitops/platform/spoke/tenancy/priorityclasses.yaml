@@ -1,0 +1,32 @@
+# 환경별 우선순위 — 노드 압박 시 prod 가 먼저 축출되지 않게 (계획서 §6.2)
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: prod
+value: 1000
+globalDefault: false
+description: "prod 워크로드"
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: uat
+value: 700
+globalDefault: false
+description: "uat 워크로드"
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: qa
+value: 400
+globalDefault: false
+description: "qa 워크로드"
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: dev
+value: 100
+globalDefault: false
+description: "dev 워크로드"

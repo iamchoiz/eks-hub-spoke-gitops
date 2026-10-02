@@ -1,0 +1,29 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: alloy
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2" # loki(2) 와 동급 — 시작 순서 무관 (loki 없으면 재시도 버퍼링)
+spec:
+  project: hub
+  sources:
+    - repoURL: https://grafana.github.io/helm-charts
+      chart: alloy
+      targetRevision: 1.11.1 # 스포크 appset 과 동일 버전 유지
+      helm:
+        valueFiles:
+          - $values/platform/hub/alloy/values.yaml
+    - repoURL: git@github.com:your-org/eks-hub-spoke-gitops.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: logging
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    automated:
+      selfHeal: true
+      prune: true

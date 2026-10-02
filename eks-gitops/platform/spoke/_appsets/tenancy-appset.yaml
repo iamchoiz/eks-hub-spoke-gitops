@@ -1,0 +1,33 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: tenancy
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - clusters:
+        selector:
+          matchLabels:
+            demo.io/workload: "true"
+  template:
+    metadata:
+      name: "tenancy-{{.name}}"
+      annotations:
+        argocd.argoproj.io/sync-wave: "3" # kyverno(wave 1) 뒤 — policies.kyverno.io CRD 필요
+    spec:
+      project: spoke
+      source:
+        repoURL: git@github.com:your-org/eks-hub-spoke-gitops.git
+        path: platform/spoke/tenancy # PriorityClass + Kyverno CEL 정책들 (전부 cluster-scoped)
+        targetRevision: main
+      destination:
+        server: "{{.server}}"
+        namespace: kube-system # cluster-scoped 라 무시되지만 필수 필드
+      syncPolicy:
+        syncOptions:
+          - ServerSideApply=true # Kyverno CEL 정책 CRD 가 커서
+        automated:
+          selfHeal: true
+          prune: true

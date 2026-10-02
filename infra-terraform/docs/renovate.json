@@ -1,0 +1,19 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "timezone": "Asia/Seoul",
+  "labels": ["renovate"],
+  "automerge": false,
+  "prConcurrentLimit": 5,
+  "terraform": {
+    "enabled": true
+  },
+  "packageRules": [
+    {
+      "description": "Terraform provider 는 마이너까지만 자동 제안",
+      "matchDatasources": ["terraform-provider"],
+      "matchUpdateTypes": ["major"],
+      "dependencyDashboardApproval": true
+    }
+  ]
+}

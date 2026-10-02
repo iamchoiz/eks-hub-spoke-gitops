@@ -1,0 +1,58 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: kyverno
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - clusters:
+        selector:
+          matchLabels:
+            demo.io/workload: "true"
+  template:
+    metadata:
+      name: "kyverno-{{.name}}"
+      annotations:
+        argocd.argoproj.io/sync-wave: "1" # CRD 포함
+    spec:
+      project: spoke
+      source:
+        repoURL: https://kyverno.github.io/kyverno/
+        chart: kyverno
+        targetRevision: 3.9.1 # app v1.19.1 — C5 의 CEL 정책 타입(ValidatingPolicy/GeneratingPolicy) 지원
+        helm:
+          valuesObject:
+            # C4+ 는 엔진만 설치 — 정책(CEL)은 C5 에서. 정책 없으면 admission webhook 영향 없음.
+            # 학습용 비용 최소로 admission replica 1 (운영이면 2+ 권장 — webhook 가용성).
+            admissionController:
+              replicas: 1
+            backgroundController:
+              replicas: 1
+            reportsController:
+              replicas: 1
+            cleanupController:
+              replicas: 1
+      destination:
+        server: "{{.server}}"
+        namespace: kyverno
+      # Kyverno CRD 영구 OutOfSync(기능 무관, Healthy) 원인 3가지 전부 정밀 무시.
+      # kind 로 매칭이라 이 한 항목이 CRD 11개+ 전부 커버.
+      #  ① 차트가 metadata.labels/annotations 를 빈 맵 {} 로 렌더 → API 서버가 빈 맵 제거 → desired≠live
+      #  ② API 서버가 spec.conversion:{strategy:None} 을 defaulting → 차트엔 없음
+      ignoreDifferences:
+        - group: apiextensions.k8s.io
+          kind: CustomResourceDefinition
+          jqPathExpressions:
+            - .metadata.labels
+            - .metadata.annotations
+            - .spec.conversion
+      syncPolicy:
+        syncOptions:
+          - CreateNamespace=true
+          - ServerSideApply=true # Kyverno CRD 가 커서 필수
+          - RespectIgnoreDifferences=true # selfHeal 루프에서도 위 무시 존중
+        automated:
+          selfHeal: true
+          prune: true

@@ -1,0 +1,23 @@
+{{- if and .Values.hpa.enabled (not .Values.keda.enabled) }}{{- /* keda.enabled 면 ScaledObject 가 HPA 를 만들어 소유 — 이중 HPA 금지 */}}
+{{- $name := printf "demo-%s" .Values.service }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ $name }}
+  labels:
+    app: {{ $name }}
+spec:
+  scaleTargetRef:
+    apiVersion: {{ .Values.rollout.enabled | ternary "argoproj.io/v1alpha1" "apps/v1" }}
+    kind: {{ .Values.rollout.enabled | ternary "Rollout" "Deployment" }}
+    name: {{ $name }}
+  minReplicas: {{ .Values.hpa.min }}
+  maxReplicas: {{ .Values.hpa.max }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.hpa.cpu }}
+{{- end }}

@@ -1,0 +1,42 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: karpenter
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - clusters:
+        selector:
+          matchLabels:
+            demo.io/workload: "true" # 스포크만 (허브 in-cluster 제외)
+  template:
+    metadata:
+      name: "karpenter-{{.name}}" # 예: karpenter-demo-eks-01
+      annotations:
+        argocd.argoproj.io/sync-wave: "0"
+    spec:
+      project: spoke
+      source:
+        repoURL: git@github.com:your-org/eks-hub-spoke-gitops.git
+        path: platform/spoke/karpenter
+        targetRevision: main
+        helm:
+          # 클러스터별 값 — cluster generator 의 {{.name}} 자동 주입 (static values.yaml 에 박지 않음)
+          valuesObject:
+            karpenter:
+              settings:
+                clusterName: "{{.name}}"
+                interruptionQueue: "{{.name}}-karpenter" # eks-cluster 모듈이 만든 SQS
+      destination:
+        server: "{{.server}}" # cluster generator 가 스포크 URL 자동 주입
+        namespace: kube-system # Pod Identity association 이 kube-system/karpenter 에 있음
+      syncPolicy:
+        # karpenter 는 자동 sync 안 함 (NodePool prune = 노드 드레인 위험, 허브와 동일 정책)
+        syncOptions:
+          - ServerSideApply=true # Karpenter CRD 가 커서 필수
+          - CreateNamespace=true
+        automated:
+          selfHeal: true
+          prune: false

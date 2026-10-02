@@ -1,0 +1,15 @@
+{{- if .Values.pdb.enabled }}
+{{- $name := printf "demo-%s" .Values.service }}
+# 노드 drain(spot 교체·업그레이드) 중에도 최소 가용 유지. replicas 1 짜리엔 켜지 말 것 (drain 데드락 — eks-stop 교훈)
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ $name }}
+  labels:
+    app: {{ $name }}
+spec:
+  minAvailable: {{ .Values.pdb.minAvailable }}
+  selector:
+    matchLabels:
+      app: {{ $name }}
+{{- end }}

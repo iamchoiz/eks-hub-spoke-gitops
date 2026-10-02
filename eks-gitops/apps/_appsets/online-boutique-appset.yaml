@@ -1,0 +1,51 @@
+# online-boutique 플랫폼 ApplicationSet — B안: overlay 없음, appset 이 직접 조립.
+#   서비스 = base/<서비스>/ 폴더 (git generator 가 자동 감지)
+#   클러스터 = ArgoCD cluster Secret 라벨 demo.io/workload=true (clusters generator 가 자동 감지)
+#   matrix = 서비스 × 클러스터 전개. 공통 패치(_components)와 namespace 는 spec.source.kustomize 로 주입.
+# → 신규 서비스 = base/ 폴더 1개, 신규 클러스터 = 등록 라벨만. overlay 보일러플레이트 0.
+# 클러스터별 개별 오버라이드(이미지 digest 등)가 필요해지는 순간 이 방식은 한계 — 그때 A안(overlays/)으로.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: online-boutique
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - matrix:
+        generators:
+          - clusters:
+              selector:
+                matchLabels:
+                  demo.io/workload: "true" # 스포크 애드온 appset 과 동일한 셀렉터
+          - git:
+              repoURL: git@github.com:your-org/eks-hub-spoke-gitops.git
+              revision: main
+              directories:
+                - path: "apps/online-boutique/base/*"
+  template:
+    metadata:
+      # 클러스터가 늘면 같은 서비스가 클러스터 수만큼 생기므로 이름에 클러스터 포함 (중복 방지)
+      name: '{{index .path.segments 1}}-{{index .path.segments 3}}-{{.name}}'
+      labels:
+        demo.io/platform: '{{index .path.segments 1}}' # ArgoCD UI 에서 플랫폼 단위 필터용
+    spec:
+      project: online-boutique # 플랫폼 1개 = 프로젝트 1개
+      source:
+        repoURL: git@github.com:your-org/eks-hub-spoke-gitops.git
+        targetRevision: main
+        path: '{{.path.path}}' # base/<서비스> 그대로 — overlay 없음
+        kustomize:
+          namespace: '{{index .path.segments 1}}' # 플랫폼명 = namespace
+          components:
+            - ../../_components/nonprod-amd64 # amd64+nonprod 공통 패치 (source path 기준 상대경로)
+      destination:
+        name: '{{.name}}' # clusters generator 가 준 클러스터 이름
+        namespace: '{{index .path.segments 1}}'
+      syncPolicy:
+        automated:
+          selfHeal: true
+          prune: true
+        syncOptions:
+          - CreateNamespace=true

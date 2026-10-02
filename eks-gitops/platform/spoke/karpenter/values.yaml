@@ -1,0 +1,19 @@
+karpenter:
+  replicas: 1 # system 노드 1개 — replica 2 면 hostname antiAffinity 로 Pending (허브 B5-0 과 동일 짝 조건)
+
+  serviceAccount:
+    name: karpenter # Pod Identity association(kube-system/karpenter)과 이름 일치 (클러스터별 TF 생성)
+
+  # settings.clusterName / interruptionQueue 는 클러스터마다 달라서 여기 박지 않는다.
+  # karpenter-appset.yaml 의 helm.valuesObject 가 {{.name}} 으로 주입 (blue/green 멀티클러스터 대응).
+
+  # system 노드에 CriticalAddonsOnly taint 가 있어 tolerate 해야 뜬다
+  tolerations:
+    - key: CriticalAddonsOnly
+      operator: Exists
+
+  controller:
+    resources:
+      requests:
+        cpu: 200m
+        memory: 256Mi

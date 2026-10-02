@@ -1,0 +1,3 @@
+# clusterName 은 karpenter-node-pool-appset.yaml 의 helm.valuesObject 가 {{.name}} 으로 주입.
+# 여기 기본값을 두지 않는다 — 미주입 시 렌더 에러로 실수를 잡기 위함 (required).
+clusterName: ""

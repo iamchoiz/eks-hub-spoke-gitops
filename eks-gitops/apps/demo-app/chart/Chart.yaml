@@ -1,0 +1,4 @@
+apiVersion: v2
+name: demo-service
+description: 자사 서비스 골든 차트 — 포트(3001/80)·probe·리소스·보안컨텍스트·스케줄링·Rollout canary 표준 내장. 서비스 values 파일은 "차이"만 적는다.
+version: 0.1.0

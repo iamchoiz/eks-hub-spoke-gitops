@@ -1,0 +1,15 @@
+apiVersion: karpenter.k8s.aws/v1
+kind: EC2NodeClass
+metadata:
+  name: default
+spec:
+  # AMI 버전 핀 (@latest 금지 원칙). F5 에서 이 버전을 올려 drift 교체 연습.
+  amiSelectorTerms:
+    - alias: bottlerocket@1.65.0
+  role: demo-hub-01-karpenter-node # 모듈이 만든 노드 role (Karpenter 가 instance profile 자동 생성)
+  subnetSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: demo # 서브넷 태그 (공유 자원이라 클러스터 이름 아님)
+  securityGroupSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: demo-hub-01 # 클러스터 SG 태그 (모듈이 붙임)

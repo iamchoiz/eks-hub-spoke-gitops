@@ -1,0 +1,10 @@
+variable "region" {}
+variable "resource_prefix" {}
+variable "account_id" {}
+variable "default_tags" {}
+variable "argocd_deploy_key_secret_path" {}
+variable "hub_platform_secret_path" {}
+variable "secret_recovery_window_days" {}
+variable "argocd_deploy_key_description" {}
+variable "hub_platform_secret_description" {}
+variable "hub_platform_secret_keys" {}

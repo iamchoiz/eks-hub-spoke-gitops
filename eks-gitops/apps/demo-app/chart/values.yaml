@@ -1,0 +1,101 @@
+# ===== 골든 차트 표준 기본값 =====
+# 서비스별 values 파일(../values/<env>/<svc>.yaml)은 여기서 벗어나는 것만 적는다.
+# 리소스 이름은 전부 demo-<service> — 릴리스명과 무관하게 고정.
+
+service: "" # (필수) 서비스 이름 — 리소스명·라벨 app: demo-<service>
+
+image:
+  repository: "" # (필수) ECR 레포
+  tag: ""        # (필수) CI 가 수정하는 유일한 값
+
+replicas: 1 # hpa.enabled 면 무시됨 (HPA 가 개수 소유)
+
+# 종료 표준: SIGTERM 전 preStop sleep — ALB 가 타겟 뺄 시간 확보 (5xx 방지)
+preStopSeconds: 5
+
+hpa:
+  enabled: false
+  min: 1
+  max: 4
+  cpu: 70 # CPU 평균 사용률(%) 기준
+
+# KEDA — 이벤트/메트릭 기반 스케일링. true 면 hpa.yaml 대신 ScaledObject 렌더
+# (min/max/cpu 는 위 hpa 블록 값을 그대로 재사용 — 개수 정책의 소유자는 hpa 블록 하나).
+# ⚠️ 선행조건: keda-operator SA 에 EKS Pod Identity(TF, cloudwatch:GetMetricData + sqs:GetQueueAttributes)
+keda:
+  enabled: false
+  awsRegion: ap-northeast-2
+  alb: # ALB 계열 트리거(requestCount·responseTime) 공용 CloudWatch 디멘션
+    targetGroup: ""  # targetgroup/k8s-.../<hash> — stable TG ⚠️ TG 재생성(ingress/svc 교체) 시 갱신 필요
+    loadBalancer: "" # app/k8s-demospoke-.../<hash> (TG 와 세트)
+    # 값 조회: aws elbv2 describe-target-groups --query "TargetGroups[?contains(TargetGroupName,'k8s-demo')]"
+  requestCount: # [양] RequestCountPerTarget — 파드당 분당 요청수 기반 (CPU 보다 선행 반응)
+    enabled: false
+    targetValue: 100 # 파드 1개가 감당할 분당 요청수 — 초과분만큼 증설
+  responseTime: # [질] TargetResponseTime — 요청수는 여유인데 느려질 때 (무거운 요청 비중 증가 등)
+    enabled: false
+    targetSeconds: "0.5" # 1분 평균 응답시간 목표(초) — 넘으면 증설. 부하테스트로 캘리브레이션
+  sqs: # 큐 워커용 — 큐 길이 기반, min 0 이면 scale-to-zero 가능 (큐 도입 시 사용)
+    enabled: false
+    queueURL: ""
+    queueLength: 5 # 파드 1개당 처리 목표 메시지 수
+  behavior: {} # 스케일 판단 기준 (HPA behavior 문법 그대로). 비우면 k8s 기본(축소 300s 안정화·증설 즉시)
+  # 예시 — "10분 연속 한산해야, 분당 1개씩만 축소":
+  # behavior:
+  #   scaleDown:
+  #     stabilizationWindowSeconds: 600
+  #     policies: [{type: Pods, value: 1, periodSeconds: 60}]
+
+pdb:
+  enabled: false # ⚠️ replicas 1 짜리엔 켜지 말 것 — 노드 drain 데드락
+  minAvailable: 1
+
+# 포트 표준: 컨테이너 3001, Service http 80 → 3001
+port: 3001
+
+# 스케줄링 표준: NodePool(taint env=<nodeEnv>) 전용 배치 + pod 라벨 env(require-env-label 정책 충족)
+nodeEnv: nonprod # dev 환경 = nonprod 풀, prod 환경 = prod
+arch: arm64      # CI 가 맥 러너 네이티브 arm64 빌드
+
+probes:
+  path: /healthz # http GET 경로 (포트는 표준 port). ALB 헬스체크도 이 경로 사용
+
+# 시간대 표준 정책 (2026-09-27 운영 결정): 모든 자사 서비스 로그·앱시간 = KST. 차트가 TZ env 자동 주입.
+# ⚠️ 이미지에 tzdata 필요 (debian 계열 기본 포함, alpine 은 apk add tzdata) — 안 먹으면 이미지 확인
+timezone: Asia/Seoul
+
+env: [] # 추가 컨테이너 env — 예: [{name: PORT, value: "3001"}] (TZ 는 위 timezone 으로 자동)
+
+resources:
+  requests: { cpu: 100m, memory: 64Mi }
+  limits: { cpu: 256m, memory: 512Mi }
+
+serviceAccount:
+  name: demo-app
+  manage: false # ns 당 한 서비스만 true (같은 SA 를 두 앱이 만들면 ArgoCD 공유경고)
+
+# 앱 시크릿 — k8s Secret 이름은 env 무관 고정(demo-app-sec), 내용물만 SM <smKey> 에서
+secret:
+  enabled: true      # envFrom 으로 참조할지
+  name: demo-app-sec
+  manage: false      # ExternalSecret 을 이 서비스가 만들지 (ns 당 하나만 true)
+  smKey: ""          # manage: true 일 때 SM 시크릿 이름 (demo-app-sec-<env>)
+
+# Argo Rollouts canary (false 면 일반 Deployment 롤링)
+rollout:
+  enabled: false
+  steps: [] # 예: [{setWeight: 10}, {pause: {}}, {setWeight: 50}, {pause: {duration: 1m}}]
+
+ingress:
+  enabled: false
+  host: ""
+  # blue/green 가중치 라우팅 (Route53 weighted records via external-dns — 실무 표준, AWS 블로그 패턴).
+  # 둘 다 채워질 때만 weighted 어노테이션 렌더. appset 이 클러스터별로 주입:
+  #   setIdentifier = 클러스터명({{.name}}) — weighted set 식별자 (클러스터마다 별개 레코드 → owner 충돌 없음)
+  #   weight        = cluster Secret 라벨 demo.io/dns-weight — blue 100 / green 0→10→…→100 로 트래픽 이동
+  # ⚠️ external-dns policy=upsert-only 필수 (sync 면 다른 set-id 레코드 삭제 — weighted 깨짐)
+  setIdentifier: ""
+  weight: ""
+
+extraVolumes: []      # 예: [{name: uploads, emptyDir: {}}]
+extraVolumeMounts: [] # 예: [{name: uploads, mountPath: /app/uploads}]

@@ -1,0 +1,115 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: kube-prometheus-stack
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - clusters:
+        selector:
+          matchLabels:
+            demo.io/workload: "true"
+  template:
+    metadata:
+      name: "kube-prometheus-stack-{{.name}}"
+      annotations:
+        argocd.argoproj.io/sync-wave: "3" # LB Controller(2) 뒤 — thanosServiceExternal NLB 생성 위해
+    spec:
+      project: spoke
+      source:
+        repoURL: https://prometheus-community.github.io/helm-charts
+        chart: kube-prometheus-stack
+        targetRevision: 91.4.1 # 허브와 동일
+        helm:
+          valuesObject:
+            # 허브에 Grafana/Alertmanager 있음 — 스포크는 수집 + Thanos sidecar 전용
+            grafana:
+              enabled: false
+            alertmanager:
+              enabled: false
+            kubeControllerManager: { enabled: false }
+            kubeScheduler: { enabled: false }
+            kubeEtcd: { enabled: false }
+            kubeProxy: { enabled: false }
+            prometheusOperator:
+              # admission webhook cert-gen 이 helm hook(Job) 이라 ArgoCD 에선 불안정 —
+              # TLS 시크릿(kube-prometheus-stack-demo-admission) 미생성 → operator 가 마운트 못 해 ContainerCreating 무한.
+              # 이 webhook 은 PrometheusRule/Prometheus CR 을 admission 때 문법검증하는 부가기능 →
+              # 끄고 operator reconcile 검증에 의존(운영상 무해). tls 도 같이 꺼야 마운트 시도 안 함.
+              admissionWebhooks:
+                enabled: false
+              tls:
+                enabled: false
+              resources:
+                requests: { cpu: 50m, memory: 128Mi }
+                limits: { memory: 128Mi }
+            kube-state-metrics:
+              resources:
+                requests: { cpu: 20m, memory: 64Mi }
+                limits: { memory: 128Mi }
+            prometheus-node-exporter:
+              resources:
+                requests: { cpu: 20m, memory: 32Mi }
+                limits: { memory: 64Mi }
+            prometheus:
+              serviceAccount:
+                create: true
+                # 스포크 Pod Identity association 대상 (monitoring/prometheus → S3 demo-thanos-metrics).
+                # sidecar 는 Prometheus 파드 SA 를 그대로 사용 → 이 SA 에 S3 쓰기 권한 필요.
+                name: prometheus
+              # ── sidecar Store API(gRPC 10901) 외부 노출 = 내부 NLB (Service 만들면 LB Controller 가 자동 생성) ──
+              # 허브 Thanos Query 가 이 NLB 로 실시간(로컬 TSDB) fan-out.
+              thanosServiceExternal:
+                enabled: true
+                type: LoadBalancer
+                annotations:
+                  service.beta.kubernetes.io/aws-load-balancer-type: external
+                  service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: ip
+                  service.beta.kubernetes.io/aws-load-balancer-scheme: internal # 허브·스포크 공유 VPC 내부 통신
+                  # 파드가 1개 AZ 에만 있어도 모든 AZ 의 NLB 노드가 그 파드로 라우팅 → 전 노드 healthy.
+                  # 없으면 cross-zone off 기본값 탓에 타 AZ 노드가 unhealthy → ALIAS+헬스평가로 DNS 가 NXDOMAIN 깜빡임.
+                  service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+                  # external-dns 가 이 이름으로 A(ALIAS) 레코드 생성 → 허브 Query 는 안정 DNS 로 참조 (NLB DNS 변동 무관)
+                  external-dns.alpha.kubernetes.io/hostname: thanos-sidecar-{{.name}}.eks.example.com # per-cluster (policy-api 패턴) — 멀티클러스터·업그레이드 flip 불필요
+                  # ALIAS 의 EvaluateTargetHealth 를 끔 → DNS 응답을 타겟 헬스와 분리.
+                  # 파드 재시작 등으로 잠깐 unhealthy 여도 레코드 유지 → Query 가 endpoint 안 잃고 재시도.
+                  external-dns.alpha.kubernetes.io/aws-evaluate-target-health: "false"
+              prometheusSpec:
+                # 로컬 6h 만 보관 — sidecar 가 2h 블록을 S3 로 shipper 업로드(과거는 허브 Store Gateway).
+                # 6h = 블록범위(2h)×3, 업로드 완료 전 삭제 방지 최소값.
+                retention: 6h
+                resources:
+                  requests: { cpu: 100m, memory: 512Mi }
+                  limits: { memory: 1Gi }
+                storageSpec:
+                  volumeClaimTemplate:
+                    spec:
+                      storageClassName: gp3
+                      accessModes: ["ReadWriteOnce"]
+                      resources:
+                        requests: { storage: 10Gi }
+                # Thanos 식별/dedup 키 — 허브(demo-hub-01)와 구분. S3 버킷 공유 Compactor 충돌 방지.
+                externalLabels:
+                  cluster: "{{.name}}"
+                # sidecar 활성화: S3 직접 업로드(shipper) + Store API 서빙을 한 컨테이너가 담당
+                thanos:
+                  objectStorageConfig:
+                    secret:
+                      type: S3
+                      config:
+                        bucket: demo-thanos-metrics
+                        endpoint: s3.ap-northeast-2.amazonaws.com
+                        region: ap-northeast-2
+                        aws_sdk_auth: true # Pod Identity — SDK 기본 크레덴셜 체인
+      destination:
+        server: "{{.server}}"
+        namespace: monitoring
+      syncPolicy:
+        syncOptions:
+          - CreateNamespace=true
+          - ServerSideApply=true # kps CRD 어노테이션이 커서 client-side apply 한도 초과
+        automated:
+          selfHeal: true
+          prune: true

@@ -1,0 +1,53 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: argo-rollouts
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - clusters:
+        selector:
+          matchLabels:
+            demo.io/workload: "true"
+  template:
+    metadata:
+      name: "argo-rollouts-{{.name}}"
+      annotations:
+        argocd.argoproj.io/sync-wave: "1" # CRD 포함
+    spec:
+      project: spoke
+      source:
+        repoURL: https://argoproj.github.io/argo-helm
+        chart: argo-rollouts
+        targetRevision: 2.40.7 # app v1.8.4 — 최신 v1.10 에서 2 마이너 뒤 (업그레이드 연습용)
+        helm:
+          valuesObject:
+            controller:
+              resources:
+                requests: { cpu: 50m, memory: 128Mi }
+                limits: { memory: 256Mi }
+            dashboard:
+              enabled: false # kubectl argo rollouts 플러그인으로 충분. 노출면 최소화
+      destination:
+        server: "{{.server}}"
+        namespace: argo-rollouts
+      # CRD 5종(rollouts·analysis*·experiments) 영구 OutOfSync 방지 — kyverno 픽스와 동일 패턴:
+      # API 서버가 spec.conversion:{strategy:None} defaulting + 차트/서버 간 labels·annotations 정규화 차이
+      ignoreDifferences:
+        - group: apiextensions.k8s.io
+          kind: CustomResourceDefinition
+          jqPathExpressions:
+            - .metadata.labels
+            - .metadata.annotations
+            - .spec.conversion
+            - .spec.preserveUnknownFields # 차트엔 false 로 명시, v1 API 서버는 저장 시 필드 제거 → 영구 diff (실측 확인)
+      syncPolicy:
+        syncOptions:
+          - CreateNamespace=true
+          - ServerSideApply=true # Rollout CRD 가 커서 client-side annotation 제한 회피
+          - RespectIgnoreDifferences=true # selfHeal 루프에서도 위 무시 존중
+        automated:
+          selfHeal: true
+          prune: true

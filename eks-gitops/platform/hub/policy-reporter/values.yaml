@@ -1,0 +1,48 @@
+# E4 — policy-reporter 허브 중앙 UI (2026-09-27 운영 방침: UI 는 허브 1개, core 는 스포크마다 — Thanos Query 패턴).
+# 로컬 core 는 허브 자신의 PolicyReport 담당(허브엔 Kyverno 가 없어 지금은 빈 값 — UI 의 "Default" 클러스터).
+# 스포크들은 ui.clusters 로 fan-out — 신규 스포크 = 항목 1개 추가 (host 규칙: policy-api-<클러스터>.eks.example.com).
+resources:
+  requests: { cpu: 20m, memory: 64Mi }
+  limits: { memory: 128Mi }
+
+# 차트 기본 uncontrolledOnly:true 가 Pod/RS 대상 리포트를 전부 걸러 DB 0 됨 (스포크와 동일 픽스)
+sourceFilters:
+  - selector:
+      sources: [kyverno, KyvernoValidatingPolicy, KyvernoImageValidatingPolicy]
+    uncontrolledOnly: false
+
+ui:
+  enabled: true
+  resources:
+    requests: { cpu: 20m, memory: 64Mi }
+    limits: { memory: 128Mi }
+
+  # GitHub SSO (네이티브 oauth) — 시크릿 = ESO policy-reporter-oauth (templates/, SM demo/platform/hub)
+  # ⚠️ 개인 GitHub 라 "로그인 장벽"까지 — 화이트리스트 없음 (읽기전용 위반현황이라 수용, org 전환 시 강화)
+  oauth:
+    enabled: true
+    provider: github
+    callbackUrl: https://policy.eks.example.com/callback
+    secretRef: policy-reporter-oauth # clientId/clientSecret 키
+
+  # 허브 공유 ALB(demo-hub — argocd·grafana 와 동거) 재활용
+  ingress:
+    enabled: true
+    className: alb
+    annotations:
+      alb.ingress.kubernetes.io/scheme: internet-facing
+      alb.ingress.kubernetes.io/target-type: ip
+      alb.ingress.kubernetes.io/group.name: demo-hub
+      alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
+      alb.ingress.kubernetes.io/ssl-redirect: "443"
+      alb.ingress.kubernetes.io/backend-protocol: HTTP
+    hosts:
+      - host: policy.eks.example.com
+        paths:
+          - path: /
+            pathType: Prefix
+
+  # ⭐ 스포크 core fan-out — 신규 스포크 온보딩 시 여기에 한 항목씩 (내부 NLB, SG 허브→스포크 8080 필요)
+  clusters:
+    - name: demo-eks-01
+      host: http://policy-api-demo-eks-01.eks.example.com:8080

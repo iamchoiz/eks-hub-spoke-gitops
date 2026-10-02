@@ -1,0 +1,48 @@
+# dev/web — 골든 차트(../../chart) 대비 차이만. 표준(포트·probe·리소스·보안·스케줄링)은 차트가 깔아줌.
+service: web
+
+# ArgoCD sync 정책 (appset templatePatch 가 읽음 — 차트 값 아님).
+# 기본 = 수동 sync. 자동배포 원하면 주석 해제 (push = 즉시 배포 + selfHeal + prune)
+# autoSync: true
+
+image:
+  repository: 111111111111.dkr.ecr.ap-northeast-2.amazonaws.com/demo-web-ecr-dev
+  tag: main-2609271957
+
+# 이미지 기본 PORT=3000 → 포트 표준(3001) 런타임 오버라이드
+env:
+  - name: PORT
+    value: "3001"
+
+serviceAccount:
+  manage: true # ns 당 1곳 — web 이 SA 생성 담당
+
+rollout:
+  enabled: true
+  steps: # dev 는 게이트 없이 자동 완주 (사실상 롤링)
+    - setWeight: 100
+
+ingress:
+  enabled: true
+  host: www.eks.example.com
+
+# KEDA request count — TG/LB 는 실값 채워둠(2026-09-28 실측). min/max/cpu 는 hpa 블록 기본값(1~4, 70).
+# ⚠️ TF keda-operator Pod Identity(docs/HANDOVER-keda-pod-identity.md) 적용 전까진 CloudWatch 트리거
+#    크레덴셜 에러(dev 라 무해) — TF 적용 + keda-operator 재기동 후 자동 회복
+# ⚠️ TG 값은 ingress/Service 재생성 시 바뀜 — ScaledObject 가 데이터 못 찾으면 min 유지(안전)라 장애는 아님
+keda:
+  enabled: true
+  alb:
+    targetGroup: targetgroup/k8s-demo-demoweb-85c5166e0d/b7589c2a2ddace11 # stable TG (canary 아님)
+    loadBalancer: app/k8s-demospoke-9a24c54b87/a752924a388a17a3               # demo-spoke 공유 ALB
+  requestCount:
+    enabled: true
+    targetValue: 100 # 파드당 분당 100 요청 (2026-09-28 부하 실증: 374/100 → 1→4 스케일아웃 확인)
+  responseTime:
+    enabled: true
+    targetSeconds: "1" # 1분 평균 1초 넘으면 증설 — dev 실측 보고 조정
+  behavior: # 스케일 판단 기준 — 아래 값은 k8s 기본값과 동일(명시해둔 것, 여기서 조정)
+    scaleUp:
+      stabilizationWindowSeconds: 120   # 증설 = 2분 안정화 (순간 스파이크 필터 — 0 이면 즉시)
+    scaleDown:
+      stabilizationWindowSeconds: 300 # 축소 = 5분 연속 한산해야 (지난 5분 필요치의 최대값 유지)

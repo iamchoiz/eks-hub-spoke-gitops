@@ -1,0 +1,55 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: aws-load-balancer-controller
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - clusters:
+        selector:
+          matchLabels:
+            demo.io/workload: "true"
+  template:
+    metadata:
+      name: "aws-load-balancer-controller-{{.name}}"
+      annotations:
+        argocd.argoproj.io/sync-wave: "2"
+    spec:
+      project: spoke
+      source:
+        repoURL: https://aws.github.io/eks-charts
+        chart: aws-load-balancer-controller
+        targetRevision: 1.10.1 # 허브와 동일 (appVersion v2.11.x)
+        helm:
+          valuesObject:
+            clusterName: "{{.name}}" # 스포크 이름 자동 주입 (demo-eks-01)
+            region: ap-northeast-2
+            vpcId: vpc-0e5d4a6661e7dc1ee # 허브·워크로드 공유 VPC
+            serviceAccount:
+              create: true
+              name: aws-load-balancer-controller # 스포크 Pod Identity association 과 일치
+            replicaCount: 1
+      destination:
+        server: "{{.server}}"
+        namespace: kube-system
+      # IngressClassParams·IngressClass 는 cluster-scoped(네임스페이스 없음)인데
+      # ArgoCD 가 Helm 렌더 시 --namespace kube-system 을 붙여 desired 에만 들어감 →
+      # 실제엔 없어 영구 OutOfSync. metadata.namespace 만 정밀 무시.
+      ignoreDifferences:
+        - group: elbv2.k8s.aws
+          kind: IngressClassParams
+          jqPathExpressions:
+            - ".metadata.namespace"
+        - group: networking.k8s.io
+          kind: IngressClass
+          jqPathExpressions:
+            - ".metadata.namespace"
+      syncPolicy:
+        syncOptions:
+          - ServerSideApply=true
+          - RespectIgnoreDifferences=true # selfHeal 루프에서도 위 무시 존중
+        automated:
+          selfHeal: true
+          prune: true

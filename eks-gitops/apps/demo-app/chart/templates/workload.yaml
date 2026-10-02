@@ -1,0 +1,120 @@
+{{- /* Rollout(canary) 또는 Deployment(롤링) — spec 이 상위호환이라 한 템플릿에서 분기 */}}
+{{- $name := printf "demo-%s" (required "service 필수" .Values.service) }}
+apiVersion: {{ .Values.rollout.enabled | ternary "argoproj.io/v1alpha1" "apps/v1" }}
+kind: {{ .Values.rollout.enabled | ternary "Rollout" "Deployment" }}
+metadata:
+  name: {{ $name }}
+  labels:
+    app: {{ $name }}
+spec:
+  # 구 RS 보관 세대 제한 (기본 10) — 롤백 여력은 유지하면서 policy-reporter 의 "유령 RS" fail 소음 축소
+  revisionHistoryLimit: 2
+  {{- if not (or .Values.hpa.enabled .Values.keda.enabled) }}
+  replicas: {{ .Values.replicas }} # hpa/keda 면 생략 — HPA 가 소유 (git 값과 selfHeal 충돌 방지. keda 도 HPA 를 만듦)
+  {{- end }}
+  {{- if .Values.rollout.enabled }}
+  strategy:
+    canary:
+      # 역할 라벨 자동 부착 — canary 만 골라 로그/메트릭 (kubectl -l role=canary / Loki {role="canary"})
+      canaryMetadata:
+        labels:
+          role: canary
+      stableMetadata:
+        labels:
+          role: stable
+      {{- if .Values.ingress.enabled }}
+      # ingress 있는 서비스 = ALB 가중치 canary (1% 단위 정밀 라우팅)
+      stableService: {{ $name }}
+      canaryService: {{ $name }}-canary
+      trafficRouting:
+        alb:
+          ingress: {{ $name }}
+          servicePort: 80
+      {{- end }}
+      # ingress 없는 내부 서비스 = 기본 canary — 가중치를 "파드 수 비율"로 실현 (replicas 단위 정밀도)
+      steps:
+        {{- toYaml .Values.rollout.steps | nindent 8 }}
+  {{- end }}
+  selector:
+    matchLabels:
+      app: {{ $name }}
+  template:
+    metadata:
+      labels:
+        app: {{ $name }}
+        env: {{ .Values.nodeEnv }} # require-env-label 정책 충족
+      annotations:
+        sidecar.istio.io/rewriteAppHTTPProbers: "true"
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      # 종료 표준: ALB 타겟 deregistration 전파 동안 기존 요청 처리 (preStop 은 k8s 1.30+ 네이티브 sleep — 이미지에 sleep 바이너리 불필요)
+      terminationGracePeriodSeconds: 30
+      # 가용성 표준: 멀티 replica 면 AZ 분산 (soft — dev 단일노드에서도 스케줄 됨)
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: {{ $name }}
+      # 스케줄링 표준 — tainted 테넌트 NodePool 전용 배치
+      nodeSelector:
+        kubernetes.io/arch: {{ .Values.arch }}
+        env: {{ .Values.nodeEnv }}
+      tolerations:
+        - key: env
+          value: {{ .Values.nodeEnv }}
+          effect: NoSchedule
+      # 보안컨텍스트 표준
+      securityContext:
+        fsGroup: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+      containers:
+        - name: server
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            privileged: false
+            readOnlyRootFilesystem: true
+          image: {{ required "image.repository 필수" .Values.image.repository }}:{{ required "image.tag 필수" .Values.image.tag }}
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: {{ .Values.preStopSeconds }}
+          ports:
+            - containerPort: {{ .Values.port }}
+          readinessProbe:
+            initialDelaySeconds: 10
+            httpGet:
+              path: {{ .Values.probes.path | quote }}
+              port: {{ .Values.port }}
+          livenessProbe:
+            initialDelaySeconds: 10
+            httpGet:
+              path: {{ .Values.probes.path | quote }}
+              port: {{ .Values.port }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          env:
+            - name: TZ # 시간대 표준 정책 — 전 서비스 KST
+              value: {{ .Values.timezone | quote }}
+            {{- with .Values.env }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- if .Values.secret.enabled }}
+          envFrom:
+            - secretRef:
+                name: {{ .Values.secret.name }}
+          {{- end }}
+          {{- with .Values.extraVolumeMounts }}
+          volumeMounts:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      {{- with .Values.extraVolumes }}
+      volumes:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

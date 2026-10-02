@@ -1,0 +1,20 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: appset-of-appsets # 스포크 독립 부트스트랩 root — kubectl apply 로 한 번만 적용 (app-of-apps-hub 에 안 엮음)
+  namespace: argocd
+spec:
+  project: spoke # 스포크 관련 전부 spoke 프로젝트로 통일. (spoke 프로젝트가 in-cluster/argocd 도 허용하게 해둠)
+  source:
+    repoURL: git@github.com:your-org/eks-hub-spoke-gitops.git
+    path: platform/spoke/_appsets # project-spoke(AppProject) + 애드온 ApplicationSet 들
+    targetRevision: main
+    directory:
+      recurse: true
+  destination:
+    server: https://kubernetes.default.svc # AppProject·ApplicationSet 은 허브 argocd ns 에 산다
+    namespace: argocd
+  syncPolicy:
+    automated:
+      selfHeal: true
+      prune: true # _appsets/ 에서 지우면 해당 리소스 제거

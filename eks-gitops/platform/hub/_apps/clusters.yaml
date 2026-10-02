@@ -1,0 +1,22 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: clusters
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "3" # ClusterSecretStore(eso-resources, wave 2) 뒤 — SM 읽어 cluster Secret 생성
+spec:
+  project: hub
+  source:
+    repoURL: git@github.com:your-org/eks-hub-spoke-gitops.git
+    path: clusters # 클러스터 등록 (spoke-*.yaml ExternalSecret) — 함대 명단
+    targetRevision: main
+    directory:
+      recurse: true
+  destination:
+    server: https://kubernetes.default.svc # cluster Secret 은 허브 argocd ns 에 산다
+    namespace: argocd
+  syncPolicy:
+    automated:
+      selfHeal: true
+      prune: true # clusters/ 에서 등록 yaml 지우면 해당 cluster Secret 제거

@@ -1,0 +1,66 @@
+# E4 — policy-reporter "core"(수집기)만 스포크에 (2026-09-27 운영 방침: UI 는 허브 중앙화 — Thanos Query 패턴).
+#   core = 현지 PolicyReport CR 을 읽어 API 로 서빙 → 내부 NLB 로 허브 UI 가 fan-out.
+#   ns = kyverno 동거 (정책 스택 일부 + tenancy 제외목록 기존재).
+#   kyverno 플러그인(정책 상세뷰)은 보류 — 노출용 NLB 가 하나 더 필요해서 (필요해지면 그때).
+# NLB 어노테이션 = C6 thanos-sidecar 교훈 세트 (cross-zone on + DNS 를 타겟헬스와 분리).
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: policy-reporter
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - clusters:
+        selector:
+          matchLabels:
+            demo.io/workload: "true"
+  template:
+    metadata:
+      name: "policy-reporter-{{.name}}"
+      annotations:
+        argocd.argoproj.io/sync-wave: "3" # kyverno(1)·ALB Controller(2) 뒤 — NLB 생성 위해
+    spec:
+      project: spoke
+      source:
+        repoURL: https://kyverno.github.io/policy-reporter
+        chart: policy-reporter
+        targetRevision: 3.8.1 # 최신(3.10.x)에서 2마이너 뒤 (업그레이드 연습용)
+        helm:
+          valuesObject:
+            resources:
+              requests: { cpu: 20m, memory: 64Mi }
+              limits: { memory: 128Mi }
+            # core API 를 허브 UI 가 읽도록 내부 NLB 노출 (클러스터별 고유 DNS)
+            service:
+              type: LoadBalancer
+              annotations:
+                service.beta.kubernetes.io/aws-load-balancer-type: external
+                service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: ip
+                service.beta.kubernetes.io/aws-load-balancer-scheme: internal
+                service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+                external-dns.alpha.kubernetes.io/hostname: "policy-api-{{.name}}.eks.example.com"
+                external-dns.alpha.kubernetes.io/aws-evaluate-target-health: "false"
+            # ⚠️ REST 명시 필수: 같은 릴리스에 UI 가 있어야만 자동 활성이라, UI 없는 core-only 는 이거 없으면
+            # informer 만 돌고 API 는 404 → 허브 UI 가 빈 화면 (2026-09-27 실측)
+            rest:
+              enabled: true
+            # ⚠️ 차트 기본 uncontrolledOnly:true = "컨트롤러 있는 Pod/RS 리포트 폐기" → 우리 리포트는 전부
+            # Pod·RS 대상이라 전멸(DB 0 = UI 빈화면, 2026-09-27 실측). 끄고 전체 수집
+            sourceFilters:
+              - selector:
+                  sources: [kyverno, KyvernoValidatingPolicy, KyvernoImageValidatingPolicy]
+                uncontrolledOnly: false
+            ui:
+              enabled: false # UI 는 허브 중앙 (platform/hub/policy-reporter)
+            plugin:
+              kyverno:
+                enabled: false # 보류 — 별도 NLB 필요
+      destination:
+        server: "{{.server}}"
+        namespace: kyverno
+      syncPolicy:
+        automated:
+          selfHeal: true
+          prune: true

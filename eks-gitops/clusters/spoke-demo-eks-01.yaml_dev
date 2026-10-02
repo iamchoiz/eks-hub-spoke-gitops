@@ -1,0 +1,61 @@
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: cluster-demo-eks-01
+  namespace: argocd # 생성될 cluster Secret 이 argocd ns 에 있어야 ArgoCD 가 인식
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: aws-secretsmanager
+    kind: ClusterSecretStore
+  target:
+    name: cluster-demo-eks-01
+    creationPolicy: Owner
+    deletionPolicy: Retain # ESO CRD 기본값 명시 (없으면 ArgoCD OutOfSync)
+    template:
+      engineVersion: v2
+      mergePolicy: Replace # ESO CRD 기본값 명시
+      metadata:
+        labels:
+          argocd.argoproj.io/secret-type: cluster # 이 라벨이 곧 ArgoCD 클러스터 등록
+          demo.io/workload: "true" # ApplicationSet cluster generator 가 스포크만 선택하는 셀렉터
+          # env→클러스터 매핑 (2026-09-26 prod 설계): 지금은 한 클러스터에 두 env 동거.
+          # 나중에 prod 클러스터 분리 = demo-eks-02 등록 시크릿에 env-prod 붙이고 여기서 제거 — gitops 수정 이게 전부
+          demo.io/env-dev: "true"
+          demo.io/env-prod: "true"
+      data:
+        name: "{{ .name }}"
+        server: "{{ .server }}"
+        config: |
+          {"awsAuthConfig":{"clusterName":"{{ .name }}","roleARN":"{{ .roleARN }}"},"tlsClientConfig":{"insecure":false,"caData":"{{ .caData }}"}}
+  # remoteRef 의 conversionStrategy/decodingStrategy/metadataPolicy 는 ESO CRD 기본값 —
+  # 명시 안 하면 API 가 자동으로 채워 ArgoCD 가 영구 OutOfSync 로 본다.
+  data:
+    - secretKey: name
+      remoteRef:
+        key: demo/spokes/demo-eks-01
+        property: name
+        conversionStrategy: Default
+        decodingStrategy: None
+        metadataPolicy: None
+    - secretKey: server
+      remoteRef:
+        key: demo/spokes/demo-eks-01
+        property: server
+        conversionStrategy: Default
+        decodingStrategy: None
+        metadataPolicy: None
+    - secretKey: roleARN
+      remoteRef:
+        key: demo/spokes/demo-eks-01
+        property: roleARN
+        conversionStrategy: Default
+        decodingStrategy: None
+        metadataPolicy: None
+    - secretKey: caData
+      remoteRef:
+        key: demo/spokes/demo-eks-01
+        property: caData
+        conversionStrategy: Default
+        decodingStrategy: None
+        metadataPolicy: None

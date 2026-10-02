@@ -1,0 +1,68 @@
+# demo-app 플랫폼 — dev 환경 ApplicationSet (2026-09-26 골든 차트 전환: 환경 1개 = appset 1개).
+#   서비스 = values/dev/<서비스>.yaml 파일 (git files generator 자동 감지) → 골든 차트(chart/)에 values 로 주입.
+#   신규 서비스 온보딩 = values 파일 1개 커밋. 표준(포트·probe·리소스·보안·스케줄링·canary)은 차트가 소유.
+#   클러스터 = cluster Secret 라벨 demo.io/env-dev=true (env→클러스터 매핑이 라벨 — prod 클러스터 분리 시 라벨만 이동)
+# dev/prod appset 이 거의 동일한 이유: cluster selector 를 git 값으로 매개변수화할 수 없어서 (matrix 한계).
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: demo-app-dev
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - matrix:
+        generators:
+          - clusters:
+              selector:
+                matchLabels:
+                  demo.io/env-dev: "true" # 이 env 가 사는 클러스터
+          - git:
+              repoURL: git@github.com:your-org/eks-hub-spoke-gitops.git
+              revision: main
+              files:
+                - path: "apps/demo-app/values/dev/*.yaml"
+  template:
+    metadata:
+      # .path.path = values/dev (디렉토리) → segments: [apps, demo-app, values, dev] — 1=플랫폼, 3=env.
+      # 서비스명 = 파일명(web.yaml → web)
+      name: '{{index .path.segments 1}}-{{index .path.segments 3}}-{{trimSuffix ".yaml" .path.filename}}-{{.name}}'
+      labels:
+        demo.io/platform: '{{index .path.segments 1}}'
+        demo.io/env: '{{index .path.segments 3}}'
+    spec:
+      project: demo-app
+      sources:
+        - repoURL: git@github.com:your-org/eks-hub-spoke-gitops.git
+          targetRevision: main
+          path: apps/demo-app/chart # 골든 차트
+          helm:
+            releaseName: 'demo-{{trimSuffix ".yaml" .path.filename}}'
+            valueFiles:
+              - '$values/{{.path.path}}/{{.path.filename}}'
+            # blue/green weighted 라우팅 — 클러스터별 값 주입 (values 파일은 클러스터 공유라 여기서)
+            valuesObject:
+              ingress:
+                setIdentifier: '{{.name}}' # 클러스터명 = weighted set 식별자
+                weight: '{{index .metadata.labels "demo.io/dns-weight"}}' # cluster Secret 라벨
+        - repoURL: git@github.com:your-org/eks-hub-spoke-gitops.git
+          targetRevision: main
+          ref: values # 위 valueFiles 의 $values 가 이 소스를 가리킴
+      destination:
+        name: '{{.name}}'
+        namespace: '{{index .path.segments 1}}-{{index .path.segments 3}}' # 플랫폼-env = namespace
+      # 기본 = 수동 sync (2026-09-28 운영 결정): push 가 곧 배포가 아니게 — 배포는 ArgoCD 에서 명시적 sync.
+      # 자동으로 돌리고 싶은 서비스만 values 파일 최상위에 autoSync: true (아래 templatePatch 가 주입)
+      syncPolicy:
+        syncOptions:
+          - CreateNamespace=true
+  # template(구조화 필드)엔 조건부 블록 불가 → templatePatch 로 파일 값 기반 조건 주입
+  templatePatch: |
+    {{- if and (hasKey . "autoSync") .autoSync }}
+    spec:
+      syncPolicy:
+        automated:
+          selfHeal: true
+          prune: true
+    {{- end }}

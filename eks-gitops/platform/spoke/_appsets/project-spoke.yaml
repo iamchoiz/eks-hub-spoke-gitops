@@ -1,0 +1,41 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: spoke
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  description: 스포크(워크로드) 클러스터 플랫폼 컴포넌트 — appset 이 생성하는 애드온들
+
+  # 허용 source — gitops repo + 스포크 애드온이 쓰는 helm repo
+  sourceRepos:
+    - git@github.com:your-org/eks-hub-spoke-gitops.git
+    - https://kubernetes-sigs.github.io/metrics-server/
+    - https://charts.jetstack.io
+    - https://charts.external-secrets.io
+    - https://aws.github.io/eks-charts
+    - https://kubernetes-sigs.github.io/external-dns/
+    - https://kedacore.github.io/charts # KEDA
+    - https://kyverno.github.io/kyverno/ # Kyverno
+    - https://charts.deliveryhero.io/ # node-problem-detector
+    - https://prometheus-community.github.io/helm-charts # kube-prometheus-stack (C6 sidecar)
+    - https://argoproj.github.io/argo-helm # Argo Rollouts (D-4 canary)
+    - https://grafana.github.io/helm-charts # alloy (E1 로그 수집 — fluent-bit 에서 교체)
+    - https://kyverno.github.io/policy-reporter # policy-reporter (E4 위반 집계)
+
+  # 허용 destination:
+  #  - demo-* 스포크: appset 이 생성하는 애드온들 (kube-system·keda·kyverno...)
+  #  - 허브 in-cluster(argocd ns): appset-of-appsets·ApplicationSet CR·이 AppProject 자신이 허브에 삶
+  destinations:
+    - name: "demo-*"
+      namespace: "*"
+    - server: https://kubernetes.default.svc
+      namespace: argocd
+
+  clusterResourceWhitelist:
+    - group: "*"
+      kind: "*"
+  namespaceResourceWhitelist:
+    - group: "*"
+      kind: "*"

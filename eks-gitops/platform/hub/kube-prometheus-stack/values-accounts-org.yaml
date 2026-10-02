@@ -1,0 +1,16 @@
+# ⭐ Grafana 계정 장부 — GitHub Org 버전 (지금은 미사용 — 개인 계정이라 values-accounts.yaml 사용 중).
+#
+# ▶ org 전환 절차:
+#   1. GitHub org + 팀 구성 후 아래 <org-name>/<admin-team> 채우기
+#   2. _apps/kube-prometheus-stack.yaml 의 valueFiles 에서 values-accounts.yaml → 이 파일로 교체 (한 줄)
+#
+# 효과: org 멤버만 로그인(allowed_organizations) + 팀 → 롤 매핑. 사람 추가/제거 = GitHub 팀에서 (커밋 불필요).
+# groups 클레임 형식: '@<org>/<team-slug>' (scopes 의 read:org 가 팀 조회 담당 — values.yaml 에 이미 있음)
+grafana:
+  grafana.ini:
+    auth.github:
+      allowed_organizations: <org-name> # org 멤버 아니면 로그인 거부 (1차 방어)
+      role_attribute_path: >-
+        contains(groups[*], '@<org-name>/platform-admins') && 'Admin' ||
+        contains(groups[*], '@<org-name>/developers') && 'Viewer' || ''
+      # '' fallback + strict(values.yaml) = 어느 팀에도 안 속하면 org 멤버라도 로그인 거부

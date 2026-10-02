@@ -1,0 +1,53 @@
+# prod/web — 골든 차트(../../chart) 대비 차이만
+service: web
+
+image:
+  repository: 111111111111.dkr.ecr.ap-northeast-2.amazonaws.com/demo-web-ecr-prod
+  tag: init # ⚠️ prod ECR 빈 상태 — 첫 prod CI 실행 전까지 ImagePullBackOff 정상. CI 가 수정
+
+nodeEnv: prod # prod NodePool(tainted) 배치
+
+# replicas 는 HPA 소유라 미기재 — min 이 사실상 상시 대수 (이 밑으론 안 내려감)
+hpa:
+  enabled: true
+  min: 1
+  max: 4
+  cpu: 70
+# pdb 는 보류(2026-09-27 운영 결정) — hpa.min 1 과 조합 시 drain 데드락. 켤 땐 hpa.min 2 와 세트로
+
+# KEDA — prod 재가동 시 alb 디멘션(TODO)만 채우고 enabled: true (dev/web.yaml 검증 구성 준용)
+keda:
+  enabled: false
+  alb:
+    targetGroup: ""  # TODO: prod demo-web stable TG 생성 후 채움 (조회 명령은 차트 values.yaml 주석)
+    loadBalancer: "" # TODO: demo-spoke 공유 ALB
+  requestCount:
+    enabled: true
+    targetValue: 100 # 파드당 분당 100 요청 — 운영 트래픽 보고 조정
+  responseTime:
+    enabled: true
+    targetSeconds: "0.5"
+  behavior: # 스케일 판단 기준 — k8s 기본값과 동일(명시). prod 는 축소를 더 보수적으로 가려면 여기서
+    scaleUp:
+      stabilizationWindowSeconds: 0
+    scaleDown:
+      stabilizationWindowSeconds: 300
+
+env:
+  - name: PORT
+    value: "3001"
+
+serviceAccount:
+  manage: true
+
+rollout:
+  enabled: true
+  steps: # prod 는 수동 게이트 canary
+    - setWeight: 10
+    - pause: {} # 무기한 — promote 로 진행
+    - setWeight: 50
+    - pause: { duration: 1m }
+
+ingress:
+  enabled: true
+  host: www.eks.example.com

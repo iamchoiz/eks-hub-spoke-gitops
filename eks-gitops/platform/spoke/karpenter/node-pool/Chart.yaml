@@ -1,0 +1,4 @@
+apiVersion: v2
+name: karpenter-node-pool
+description: EC2NodeClass + NodePool (클러스터별 값은 clusterName 으로 주입 — blue/green 대응)
+version: 0.1.0

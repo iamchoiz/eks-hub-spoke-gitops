@@ -1,0 +1,33 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kube-prometheus-stack
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1" # storageclass(0) 뒤 — PVC 가 gp3 필요
+spec:
+  project: hub
+  sources:
+    - repoURL: https://prometheus-community.github.io/helm-charts
+      chart: kube-prometheus-stack
+      targetRevision: 91.4.1 # verify at sync (operator v0.94.0)
+      helm:
+        valueFiles:
+          - $values/platform/hub/kube-prometheus-stack/values.yaml
+          - $values/platform/hub/kube-prometheus-stack/values-accounts.yaml # 계정/권한 장부 (SSO 롤 매핑)
+    - repoURL: git@github.com:your-org/eks-hub-spoke-gitops.git
+      targetRevision: main
+      ref: values # 위 valueFiles 의 $values 가 이 소스를 가리킴
+    - repoURL: git@github.com:your-org/eks-hub-spoke-gitops.git
+      targetRevision: main
+      path: platform/hub/kube-prometheus-stack/templates # 부속 raw 매니페스트 (ExternalSecret 등)
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true # kube-prometheus CRD 가 커서 필수
+    automated:
+      selfHeal: true
+      prune: true

@@ -1,0 +1,10 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - manifests.yaml # upstream v0.10.7 vendoring (순정 — 이미지 교체는 아래 images 로)
+
+# 배포 = 이 블록만 수정 (CI: kustomize edit set image). 우리 ECR 로 가져갈 땐 newName+digest 추가.
+images:
+  - name: us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/paymentservice
+    newTag: v0.10.7

@@ -1,0 +1,13 @@
+variable "cluster_name" {}
+variable "cluster_security_group_id" {}
+variable "hub_management_role_arn" {}
+variable "hub_security_group_id" {}
+variable "allow_effect" {}
+variable "aws_principal_type" {}
+variable "spoke_trust_actions" {}
+variable "spoke_role_name" {}
+variable "access_policy_arn" {}
+variable "access_scope_type" {}
+variable "api_ingress_protocol" {}
+variable "api_ingress_port" {}
+variable "api_ingress_description" {}

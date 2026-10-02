@@ -1,0 +1,9 @@
+apiVersion: v2
+name: argocd
+version: 0.1.0
+
+dependencies:
+  - name: argo-cd
+    version: 10.2.2 # app v3.4.6 — 일부러 낮게. 3.4 최신패치(CVE안전) → 나중에 3.5.x 로 self-upgrade 연습
+    # 최신 10.9.x(app 3.5.3). 올릴 땐 이 줄만 바꾸면 ArgoCD 가 자기를 업그레이드(B4 self-manage)
+    repository: https://argoproj.github.io/argo-helm

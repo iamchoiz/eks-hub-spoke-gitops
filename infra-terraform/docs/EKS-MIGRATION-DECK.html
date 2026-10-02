@@ -1,0 +1,1000 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EKS 플랫폼 구축 계획 — 프레젠테이션</title>
+<style>
+  :root {
+    --paper:#fafbfd; --dotink:#dbe3f0;
+    --card:#ffffff; --card-2:#f3f6fb; --line:#e2e8f2;
+    --text:#1a2437; --muted:#5b6880; --dim:#8f99ad;
+    --accent:#326ce5;      /* kubernetes blue */
+    --tf:#7b42bc;          /* terraform */
+    --gha:#24292f;         /* github ink */
+    --argo:#e96d3f;        /* argocd */
+    --manual:#d0454c; --ok:#0f8a5f; --warn:#b06e12;
+    --shadow:0 1px 2px rgba(26,36,55,.05), 0 12px 30px -18px rgba(26,36,55,.18);
+    --mono:"SF Mono", ui-monospace, "JetBrains Mono", Menlo, monospace;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { height:100%; }
+  body {
+    background-color:var(--paper);
+    background-image:radial-gradient(circle, var(--dotink) 1px, transparent 1.4px);
+    background-size:26px 26px;
+    color:var(--text);
+    font-family:-apple-system, BlinkMacSystemFont, "Pretendard", "Apple SD Gothic Neo", "Noto Sans KR", "Segoe UI", sans-serif;
+    overflow:hidden;
+  }
+  code, .mono { font-family:var(--mono); }
+  code { background:#eef2fa; border:1px solid var(--line); border-radius:5px; padding:.08em .4em; font-size:.85em; color:#2b56c6; }
+
+  /* ---------- deck frame ---------- */
+  #deck { height:100%; position:relative; }
+  .slide {
+    position:absolute; inset:0;
+    display:flex; flex-direction:column;
+    padding:3rem 4.5rem 4.2rem;
+    opacity:0; transform:translateX(40px);
+    transition:opacity .38s ease, transform .38s ease;
+    pointer-events:none; overflow:hidden;
+  }
+  .slide.active { opacity:1; transform:none; pointer-events:auto; }
+  .slide.prev { transform:translateX(-40px); }
+  .slide-body { flex:1; min-height:0; overflow-y:auto; padding-right:.5rem; }
+  .slide-body::-webkit-scrollbar { width:6px; }
+  .slide-body::-webkit-scrollbar-thumb { background:#d3dae8; border-radius:3px; }
+
+  .kicker {
+    font-family:var(--mono); font-size:.72rem; letter-spacing:.26em; text-transform:uppercase;
+    color:var(--accent); font-weight:700; margin-bottom:.6rem;
+  }
+  .kicker::before { content:"// "; color:var(--dim); }
+  h1 { font-size:2.7rem; font-weight:800; letter-spacing:-.03em; line-height:1.18; text-wrap:balance; }
+  h2 {
+    font-size:1.85rem; font-weight:800; letter-spacing:-.02em; text-wrap:balance;
+    padding-bottom:.6rem; margin-bottom:.7rem;
+    border-bottom:1px solid var(--line);
+  }
+  .sub { color:var(--muted); font-size:1rem; line-height:1.65; margin-bottom:1.4rem; max-width:72rem; }
+  .sub b, .sub strong { color:var(--text); }
+
+  /* ---------- chips : 블루프린트 태그 ---------- */
+  .chip {
+    display:inline-flex; align-items:center; gap:.45em;
+    font-family:var(--mono); font-size:.68rem; font-weight:700; letter-spacing:.04em;
+    padding:.26em .6em; border-radius:6px; border:1px solid;
+    white-space:nowrap; background:#fff;
+  }
+  .chip::before { content:""; width:.5em; height:.5em; border-radius:2px; background:currentColor; }
+  .chip.tf     { color:var(--tf);     border-color:color-mix(in srgb,var(--tf) 35%,transparent);     background:color-mix(in srgb,var(--tf) 6%,#fff); }
+  .chip.gha    { color:var(--gha);    border-color:color-mix(in srgb,var(--gha) 30%,transparent);    background:color-mix(in srgb,var(--gha) 5%,#fff); }
+  .chip.argo   { color:var(--argo);   border-color:color-mix(in srgb,var(--argo) 40%,transparent);   background:color-mix(in srgb,var(--argo) 7%,#fff); }
+  .chip.manual { color:var(--manual); border-color:color-mix(in srgb,var(--manual) 35%,transparent); background:color-mix(in srgb,var(--manual) 6%,#fff); }
+  .chip.ok     { color:var(--ok);     border-color:color-mix(in srgb,var(--ok) 35%,transparent);     background:color-mix(in srgb,var(--ok) 6%,#fff); }
+  .chip.warn   { color:var(--warn);   border-color:color-mix(in srgb,var(--warn) 40%,transparent);   background:color-mix(in srgb,var(--warn) 7%,#fff); }
+
+  /* ---------- cards ---------- */
+  .card {
+    background:var(--card); border:1px solid var(--line);
+    border-radius:12px; padding:1.05rem 1.25rem;
+    box-shadow:var(--shadow);
+  }
+  .card h3 { font-size:.98rem; font-weight:800; margin-bottom:.45rem; letter-spacing:-.01em; }
+  .card p, .card li { font-size:.87rem; color:var(--muted); line-height:1.62; }
+  .card b, .card strong, td b { color:var(--text); }
+  .grid { display:grid; gap:.85rem; }
+  .g2 { grid-template-columns:1fr 1fr; }
+  .g3 { grid-template-columns:repeat(3,1fr); }
+
+  ul.clean { list-style:none; }
+  ul.clean li { padding-left:1.15em; position:relative; margin-bottom:.42em; }
+  ul.clean li::before { content:"›"; position:absolute; left:.15em; color:var(--accent); font-weight:800; }
+  ul.clean li.warn::before { content:"⚠"; color:var(--warn); font-size:.85em; top:.1em; }
+
+  table { width:100%; border-collapse:collapse; font-size:.86rem; }
+  th { text-align:left; color:var(--dim); font-family:var(--mono); font-size:.68rem; letter-spacing:.12em; text-transform:uppercase;
+       padding:.5rem .8rem; border-bottom:1px solid var(--line); }
+  td { padding:.6rem .8rem; border-bottom:1px solid color-mix(in srgb,var(--line) 65%,transparent);
+       color:var(--muted); line-height:1.55; vertical-align:top; }
+  td:first-child { color:var(--text); font-weight:700; white-space:nowrap; }
+  tr:last-child td { border-bottom:none; }
+
+  /* ---------- slide 1 ---------- */
+  .titlewrap { text-align:center; margin-top:1rem; margin-bottom:2rem; }
+  .titlewrap h1 span { color:var(--accent); font-family:var(--mono); font-weight:700; letter-spacing:-.04em; }
+  .goal {
+    display:inline-block; margin-top:1rem; padding:.55rem 1.2rem; border-radius:99px;
+    border:1px solid color-mix(in srgb,var(--warn) 30%,transparent);
+    background:color-mix(in srgb,var(--warn) 7%,#fff);
+    color:var(--warn); font-weight:700; font-size:.92rem;
+  }
+  .flow { display:flex; align-items:stretch; justify-content:center; gap:0; margin:0 auto; max-width:1500px; }
+  .phase {
+    flex:1; min-width:0; position:relative;
+    background:var(--card); border:1px solid var(--line); border-radius:14px;
+    padding:1.1rem 1rem 1rem; text-align:center;
+    box-shadow:var(--shadow);
+    transition:transform .2s ease, border-color .2s ease, box-shadow .2s ease;
+  }
+  .phase:hover { transform:translateY(-5px); border-color:var(--accent); box-shadow:0 4px 8px rgba(26,36,55,.06), 0 18px 38px -16px rgba(50,108,229,.3); }
+  .phase .letter {
+    width:2.4rem; height:2.4rem; border-radius:10px; margin:0 auto .6rem;
+    display:flex; align-items:center; justify-content:center;
+    font-family:var(--mono); font-weight:800; font-size:1.1rem; color:#fff;
+    box-shadow:0 4px 10px -3px rgba(26,36,55,.35);
+  }
+  .phase h3 { font-size:.96rem; font-weight:800; margin-bottom:.4rem; letter-spacing:-.01em; }
+  .phase p  { font-size:.75rem; color:var(--muted); line-height:1.55; }
+  .phase .owners { margin-top:.7rem; display:flex; justify-content:center; gap:.3rem; flex-wrap:wrap; }
+  .phase.goalphase { border-color:color-mix(in srgb,var(--warn) 45%,transparent); box-shadow:0 10px 34px -12px rgba(176,110,18,.35); background:linear-gradient(180deg,#fffdf6,#fff); }
+  .arrow { display:flex; align-items:center; padding:0 .35rem; color:#b9c2d4; font-size:1.25rem; font-weight:300; }
+  .legend { display:flex; justify-content:center; gap:.6rem; margin-top:2rem; flex-wrap:wrap; }
+  .legend .note { color:var(--dim); font-size:.78rem; align-self:center; margin-left:.6rem; }
+
+  /* ---------- principles ---------- */
+  .num {
+    width:1.9rem; height:1.9rem; border-radius:8px; flex:none;
+    background:color-mix(in srgb,var(--accent) 10%,#fff);
+    border:1px solid color-mix(in srgb,var(--accent) 25%,transparent);
+    color:var(--accent); font-family:var(--mono); font-weight:800; font-size:.9rem;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .prow { display:flex; gap:.9rem; align-items:flex-start; }
+
+  /* ---------- architecture (slide 확정구성) ---------- */
+  .arch { display:grid; grid-template-columns:1.05fr 1.05fr .78fr; gap:1rem; align-items:stretch; }
+  .box {
+    border:1.5px solid var(--line); border-radius:13px; padding:.95rem 1rem;
+    background:var(--card); box-shadow:var(--shadow);
+  }
+  .box .boxtitle { font-weight:800; font-size:.92rem; margin-bottom:.15rem; display:flex; align-items:center; gap:.5rem; }
+  .box .boxsub { font-size:.72rem; color:var(--dim); margin-bottom:.7rem; font-family:var(--mono); }
+  .box.hub  { border-color:color-mix(in srgb,var(--argo) 45%,transparent); }
+  .box.wl   { border-color:color-mix(in srgb,var(--accent) 45%,transparent); }
+  .innerbox {
+    background:var(--card-2); border:1px solid var(--line); border-radius:8px;
+    padding:.45rem .7rem; font-size:.78rem; color:var(--muted); margin-bottom:.45rem; line-height:1.5;
+  }
+  .innerbox b { color:var(--text); }
+  .vpcframe {
+    border:1.5px dashed color-mix(in srgb,var(--tf) 45%,transparent);
+    border-radius:16px; padding:1.15rem; position:relative; margin-top:.9rem;
+    background:color-mix(in srgb,var(--tf) 2%,transparent);
+  }
+  .vpcframe > .vpclabel {
+    position:absolute; top:-.72rem; left:1.2rem; background:var(--paper);
+    padding:0 .6rem; font-size:.74rem; font-weight:700; color:var(--tf); font-family:var(--mono); border-radius:6px;
+  }
+  .flowline { text-align:center; font-size:.75rem; color:var(--dim); margin:.5rem 0; }
+  .flowline b { color:var(--muted); }
+
+  /* ---------- chain ---------- */
+  .chain { display:flex; align-items:center; gap:.4rem; flex-wrap:wrap; margin:.6rem 0 1.1rem; }
+  .chain .step {
+    background:#fff; border:1px solid var(--line); border-radius:8px;
+    padding:.4rem .7rem; font-size:.79rem; color:var(--text); font-weight:600; white-space:nowrap;
+    box-shadow:0 1px 2px rgba(26,36,55,.05);
+  }
+  .chain .step small { display:block; font-weight:500; color:var(--dim); font-size:.67rem; margin-top:.1rem; }
+  .chain .sep { color:#b9c2d4; font-family:var(--mono); }
+
+  .callout {
+    border-left:3px solid var(--warn); background:color-mix(in srgb,var(--warn) 6%,#fff);
+    border-radius:0 10px 10px 0; padding:.75rem 1rem; font-size:.85rem; color:var(--muted);
+    line-height:1.6; margin:.9rem 0;
+  }
+  .callout.blue { border-left-color:var(--accent); background:color-mix(in srgb,var(--accent) 5%,#fff); }
+  .callout.red  { border-left-color:var(--manual); background:color-mix(in srgb,var(--manual) 5%,#fff); }
+  .callout b { color:var(--text); }
+
+  .done { font-size:.8rem; color:var(--ok); margin-top:.35rem; }
+  .done::before { content:"✓ 완료 기준 — "; font-weight:800; }
+
+  /* ---------- nav ---------- */
+  #progress { position:fixed; top:0; left:0; height:3px; background:var(--accent); width:0; transition:width .3s ease; z-index:10; }
+  #nav { position:fixed; bottom:1.15rem; right:1.6rem; display:flex; align-items:center; gap:.7rem; z-index:10; }
+  #nav button {
+    width:2.4rem; height:2.4rem; border-radius:10px;
+    border:1px solid var(--line); background:#fff; color:var(--text);
+    font-size:1.05rem; cursor:pointer; transition:.15s;
+    box-shadow:0 1px 3px rgba(26,36,55,.08);
+  }
+  #nav button:hover { border-color:var(--accent); color:var(--accent); }
+  #nav button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  #counter { color:var(--dim); font-size:.78rem; font-family:var(--mono); font-variant-numeric:tabular-nums; }
+  #dots { position:fixed; bottom:1.6rem; left:50%; transform:translateX(-50%); display:flex; gap:.35rem; z-index:10; }
+  #dots span { width:1rem; height:3px; border-radius:2px; background:#ccd4e3; cursor:pointer; transition:.2s; }
+  #dots span.on { background:var(--accent); width:1.7rem; }
+  #hint { position:fixed; bottom:1.35rem; left:1.6rem; color:var(--dim); font-size:.72rem; font-family:var(--mono); z-index:10; }
+  .foot-note { color:var(--dim); font-size:.76rem; margin-top:auto; padding-top:.8rem; }
+
+  /* ================= slide 2 : 구성도 (cloud-arch style) ================= */
+  .actorline { text-align:center; font-family:var(--mono); font-size:.74rem; color:var(--muted); margin-bottom:.55rem; }
+  .actorline b { color:var(--text); }
+  .dfit { position:relative; margin:0 auto; }
+  .diagram { position:absolute; left:50%; top:0; width:1240px; height:570px; transform-origin:top center; }
+  .wires { position:absolute; inset:0; width:100%; height:100%; z-index:4; pointer-events:none; overflow:visible; }
+  .wires text { font-family:var(--mono); font-size:12px; font-weight:700; }
+  .dnode { position:absolute; }
+
+  .repo {
+    z-index:3; display:flex; align-items:center; gap:.7rem;
+    background:#fff; border:1.5px solid; border-radius:14px;
+    padding:.65rem .95rem; box-shadow:var(--shadow); height:80px;
+  }
+  .repo.rtf { border-color:color-mix(in srgb,var(--tf) 40%,transparent); }
+  .repo.rgo { border-color:color-mix(in srgb,var(--argo) 42%,transparent); }
+  .repo .rname { font-family:var(--mono); font-weight:700; font-size:.84rem; letter-spacing:-.02em; }
+  .repo .rrole { font-size:.7rem; color:var(--muted); margin-top:.15rem; }
+  .repo .rrole b { color:var(--text); }
+
+  .repo .ghmark { width:26px; height:26px; color:#24292f; flex:none; }
+  .repo .rowner { color:var(--dim); font-weight:500; }
+  .repo .rname { color:#1f6feb; }
+  .repo .rmeta { display:flex; align-items:center; gap:.5rem; margin-top:.3rem;
+                 font-family:var(--mono); font-size:.66rem; color:var(--muted); }
+  .repo .pub { border:1px solid var(--line); border-radius:99px; padding:.06em .55em;
+               color:var(--dim); font-weight:600; font-size:.62rem; }
+  .repo .br { color:var(--dim); }
+
+  .cloud {
+    z-index:1; border:1.5px solid #d5deec; border-radius:22px;
+    background:rgba(255,255,255,.45);
+    box-shadow:0 20px 50px -35px rgba(26,36,55,.25);
+  }
+  .vpcz {
+    z-index:1; border:1.5px dashed color-mix(in srgb,var(--accent) 38%,transparent);
+    border-radius:16px; background:color-mix(in srgb,var(--accent) 2.5%,transparent);
+  }
+  .zlabel {
+    position:absolute; top:-.7rem; left:1rem; background:var(--paper);
+    padding:0 .55rem; font-family:var(--mono); font-size:.68rem; font-weight:700;
+    color:var(--dim); border-radius:6px; letter-spacing:.04em;
+  }
+  .vpcz > .zlabel { color:var(--accent); }
+
+  .cgroup {
+    z-index:2; background:#fff; border:1.5px solid; border-radius:14px;
+    padding:.65rem .8rem; box-shadow:var(--shadow);
+    display:flex; flex-direction:column; gap:.55rem;
+  }
+  .cgroup.ph { border-color:color-mix(in srgb,var(--argo) 45%,transparent); }
+  .cgroup.pw { border-color:color-mix(in srgb,var(--accent) 45%,transparent); }
+  .ghead { display:flex; align-items:center; justify-content:space-between; gap:.5rem; padding-bottom:.4rem; border-bottom:1px solid var(--line); }
+  .ghead .gname { font-family:var(--mono); font-weight:800; font-size:.88rem; letter-spacing:-.02em; }
+  .tgrid { display:grid; grid-template-columns:1fr 1fr; gap:.6rem .5rem; }
+
+  .tile { display:flex; align-items:center; gap:.5rem; min-width:0; }
+  .ticon {
+    width:34px; height:34px; border-radius:9px; flex:none;
+    display:flex; align-items:center; justify-content:center;
+    box-shadow:inset 0 -5px 10px rgba(0,0,0,.14), 0 3px 8px -3px rgba(26,36,55,.35);
+  }
+  .ticon svg { width:18px; height:18px; stroke:#fff; stroke-width:1.9; fill:none; stroke-linecap:round; stroke-linejoin:round; }
+  .ticon.i-argo { background:linear-gradient(160deg,#f08b5f,#e05a2b); }
+  .ticon.i-obs  { background:linear-gradient(160deg,#4a83f0,#2456c6); }
+  .ticon.i-graf { background:linear-gradient(160deg,#f2a33c,#d97a10); }
+  .ticon.i-loki { background:linear-gradient(160deg,#5fb35f,#2e7d32); }
+  .ticon.i-eso  { background:linear-gradient(160deg,#22a97e,#0d7a54); }
+  .ticon.i-app  { background:linear-gradient(160deg,#4a83f0,#2456c6); }
+  .ticon.i-kar  { background:linear-gradient(160deg,#9a63d8,#6d34ab); }
+  .ticon.i-pol  { background:linear-gradient(160deg,#c98a26,#9c650f); }
+  .ticon.i-s3   { background:linear-gradient(160deg,#3f9e6e,#20714a); }
+  .ticon.i-ecr  { background:linear-gradient(160deg,#e88a3a,#c9641a); }
+  .ticon.i-dns  { background:linear-gradient(160deg,#8f6ae0,#5f3ab5); }
+  .ticon.i-sm   { background:linear-gradient(160deg,#d8566a,#b03247); }
+  .tile .tname { font-weight:800; font-size:.78rem; letter-spacing:-.01em; white-space:nowrap; }
+  .tile .tsub  { font-size:.64rem; color:var(--muted); line-height:1.35; margin-top:.05rem; }
+  .tile .tsub b { color:var(--text); }
+
+  .regional { z-index:2; display:flex; flex-direction:column; gap:.7rem; }
+  .regional .rtitle2 {
+    font-family:var(--mono); font-size:.64rem; font-weight:700; letter-spacing:.1em;
+    text-transform:uppercase; color:var(--dim);
+  }
+
+  .serve { display:flex; align-items:center; justify-content:center; gap:.4rem; flex-wrap:wrap; margin-top:.7rem; }
+  .serve .stitle { font-family:var(--mono); font-size:.72rem; font-weight:700; color:var(--text); margin-right:.3rem; }
+  .serve .step {
+    background:#fff; border:1px solid var(--line); border-radius:8px;
+    padding:.32rem .65rem; font-size:.74rem; color:var(--text); font-weight:600; white-space:nowrap;
+    box-shadow:0 1px 2px rgba(26,36,55,.05);
+  }
+  .serve .sep { color:#b9c2d4; font-family:var(--mono); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .slide, #progress, #dots span, .phase { transition:none; }
+  }
+  @media (max-width: 1100px) {
+    .slide { padding:2rem 1.4rem 4.4rem; }
+    h1 { font-size:1.9rem; } h2 { font-size:1.45rem; }
+    .flow { flex-direction:column; gap:.5rem; }
+    .arrow { transform:rotate(90deg); justify-content:center; padding:.1rem 0; }
+    .g2, .g3, .arch { grid-template-columns:1fr; }
+    #hint { display:none; }
+  }
+</style>
+</head>
+<body>
+
+<div id="progress"></div>
+
+<div id="deck">
+
+<!-- ================= SLIDE 1 : 표지 + 전체 흐름 ================= -->
+<section class="slide">
+  <div class="slide-body" style="display:flex;flex-direction:column;justify-content:center;">
+    <div class="titlewrap">
+      <div class="kicker">demo · ap-northeast-2 · prefix demo-</div>
+      <h1>EKS 플랫폼 구축 <span>A → F</span></h1>
+      <div class="goal">🎯 목적은 EKS 운영 역량 — 업그레이드(Phase F)를 하려고 앞의 다섯 단계를 쌓는다</div>
+    </div>
+
+    <div class="flow">
+      <div class="phase">
+        <div class="letter" style="background:var(--tf)">A</div>
+        <h3>Terraform 기반</h3>
+        <p>state 백엔드 · CI(OIDC) · 태깅<br>신규 VPC · ECR · S3 · DNS 존</p>
+        <div class="owners"><span class="chip tf">TF</span><span class="chip gha">GHA</span></div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="phase">
+        <div class="letter" style="background:var(--argo)">B</div>
+        <h3>허브 클러스터</h3>
+        <p>demo-hub-01 · ArgoCD self-manage<br>Karpenter · 관측 스택 · Ingress</p>
+        <div class="owners"><span class="chip tf">TF</span><span class="chip argo">ArgoCD</span><span class="chip manual">수동 1회</span></div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="phase">
+        <div class="letter" style="background:var(--accent)">C</div>
+        <h3>워크로드 클러스터</h3>
+        <p>demo-eks-01 · 스포크 자동 등록<br>Karpenter · 멀티테넌시 통제</p>
+        <div class="owners"><span class="chip tf">TF</span><span class="chip argo">ArgoCD</span></div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="phase">
+        <div class="letter" style="background:var(--ok)">D</div>
+        <h3>첫 서비스</h3>
+        <p>골든 템플릿 · digest 승격<br>Argo Rollouts canary</p>
+        <div class="owners"><span class="chip argo">GitOps</span><span class="chip gha">앱 CI</span></div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="phase">
+        <div class="letter" style="background:#9f5fe0">E</div>
+        <h3>나머지 플랫폼</h3>
+        <p>Loki · Vault · OpenCost<br>oauth2-proxy SSO · Backstage</p>
+        <div class="owners"><span class="chip argo">GitOps</span></div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="phase goalphase">
+        <div class="letter" style="background:var(--warn)">F</div>
+        <h3>업그레이드 스터디 🎯</h3>
+        <p>1.34 → 1.35 → 1.36 in-place<br>AMI 순환 · blue/green(+Cilium)</p>
+        <div class="owners"><span class="chip warn">목표</span></div>
+      </div>
+    </div>
+
+    <div class="legend">
+      <span class="chip tf">Terraform</span>
+      <span class="chip gha">GitHub Actions (OIDC)</span>
+      <span class="chip argo">ArgoCD / GitOps</span>
+      <span class="chip manual">수동 — 전 과정에서 딱 2회</span>
+      <span class="note">수동 2회 = ① state 버킷 부트스트랩 · ② root-app.yaml 최초 apply</span>
+    </div>
+  </div>
+</section>
+
+
+<!-- ================= SLIDE 2 : 전체 구성도 ================= -->
+<section class="slide">
+  <div class="kicker">Big Picture</div>
+  <h2>전체 구성도 — 레포 2개가 시스템의 전부다</h2>
+  <div class="slide-body" style="display:flex;flex-direction:column;justify-content:center;">
+    <div class="actorline">👤 사람의 입력 = <b>git commit</b> 뿐</div>
+
+    <div class="dfit">
+    <div class="diagram">
+
+      <svg class="wires" viewBox="0 0 1240 570" fill="none">
+        <defs>
+          <marker id="m-tf"   viewBox="0 0 8 8" refX="6.5" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0.5,0.5 L7,4 L0.5,7.5 Z" fill="#7b42bc"/></marker>
+          <marker id="m-argo" viewBox="0 0 8 8" refX="6.5" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0.5,0.5 L7,4 L0.5,7.5 Z" fill="#e96d3f"/></marker>
+          <marker id="m-acc"  viewBox="0 0 8 8" refX="6.5" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0.5,0.5 L7,4 L0.5,7.5 Z" fill="#326ce5"/></marker>
+        </defs>
+        <path d="M315,96 C315,120 315,130 315,146" stroke="#7b42bc" stroke-width="2" marker-end="url(#m-tf)"/>
+        <text x="332" y="126" fill="#7b42bc">terraform apply</text>
+        <path d="M925,96 C880,180 560,140 402,228" stroke="#e96d3f" stroke-width="2" marker-end="url(#m-argo)"/>
+        <text x="668" y="143" fill="#e96d3f">pull</text>
+        <path d="M424,330 C448,330 456,330 474,330" stroke="#e96d3f" stroke-width="2" marker-end="url(#m-argo)"/>
+        <text x="450" y="316" fill="#e96d3f" text-anchor="middle">sync</text>
+        <path d="M476,414 C452,414 444,414 428,414" stroke="#326ce5" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#m-acc)"/>
+        <text x="450" y="438" fill="#326ce5" text-anchor="middle">metrics</text>
+        <path d="M340,472 C560,538 780,512 876,296" stroke="#326ce5" stroke-width="1.6" stroke-dasharray="4 3" opacity=".55" marker-end="url(#m-acc)"/>
+        <text x="655" y="530" fill="#326ce5" opacity=".8" text-anchor="middle">Thanos · Loki → S3</text>
+      </svg>
+
+      <div class="dnode repo rtf" style="left:118px; top:14px; width:394px;">
+        <svg class="ghmark" viewBox="0 0 24 24"><path fill="currentColor" d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>
+        <div style="min-width:0;">
+          <div class="rname"><span class="rowner">your-org /</span> eks-terraform</div>
+          <div class="rmeta"><span class="pub">Private</span><span class="br">⎇ main</span><span>Terraform · AWS 리소스</span></div>
+        </div>
+      </div>
+      <div class="dnode repo rgo" style="left:750px; top:14px; width:350px;">
+        <svg class="ghmark" viewBox="0 0 24 24"><path fill="currentColor" d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>
+        <div style="min-width:0;">
+          <div class="rname"><span class="rowner">your-org /</span> eks-gitops</div>
+          <div class="rmeta"><span class="pub">Private</span><span class="br">⎇ main</span><span>ArgoCD · 클러스터 선언</span></div>
+        </div>
+      </div>
+
+      <div class="dnode cloud" style="left:30px; top:150px; width:1180px; height:390px;">
+        <span class="zlabel">☁ aws · ap-northeast-2</span>
+      </div>
+      <div class="dnode vpcz" style="left:60px; top:196px; width:800px; height:300px;">
+        <span class="zlabel">vpc 10.20.0.0/16</span>
+      </div>
+
+      <!-- hub -->
+      <div class="dnode cgroup ph" style="left:92px; top:234px; width:330px; height:236px;">
+        <div class="ghead"><span class="gname">demo-hub-01</span><span class="chip argo">허브 · pet</span></div>
+        <div class="tgrid">
+          <div class="tile"><span class="ticon i-argo"><svg viewBox="0 0 24 24"><path d="M19 12a7 7 0 1 1-2-4.9"/><path d="M17.5 3v4.5H13"/></svg></span>
+            <div><div class="tname">ArgoCD</div><div class="tsub">배포 사령탑</div></div></div>
+          <div class="tile"><span class="ticon i-kar"><svg viewBox="0 0 24 24"><rect x="3" y="14.5" width="7" height="6.5" rx="1.5"/><rect x="14" y="14.5" width="7" height="6.5" rx="1.5"/><path d="M12 11V4"/><path d="M8.8 7.2L12 4l3.2 3.2"/></svg></span>
+            <div><div class="tname">Karpenter</div><div class="tsub">노드 자동 공급</div></div></div>
+          <div class="tile"><span class="ticon i-obs"><svg viewBox="0 0 24 24"><path d="M3 14h4l2.2-6 3.4 9 2.2-5H21"/></svg></span>
+            <div><div class="tname">Prometheus</div><div class="tsub">메트릭 수집</div></div></div>
+          <div class="tile"><span class="ticon i-obs"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="5.5" rx="7" ry="2.3"/><path d="M5 5.5v6c0 1.3 3.1 2.3 7 2.3s7-1 7-2.3v-6"/><path d="M5 11.5v6c0 1.3 3.1 2.3 7 2.3s7-1 7-2.3v-6"/></svg></span>
+            <div><div class="tname">Thanos</div><div class="tsub">장기보관 → S3</div></div></div>
+          <div class="tile"><span class="ticon i-graf"><svg viewBox="0 0 24 24"><rect x="3.5" y="12" width="4.4" height="8" rx="1"/><rect x="10" y="7" width="4.4" height="13" rx="1"/><rect x="16.5" y="3.5" width="4.4" height="16.5" rx="1"/></svg></span>
+            <div><div class="tname">Grafana</div><div class="tsub">통합 대시보드</div></div></div>
+          <div class="tile"><span class="ticon i-loki"><svg viewBox="0 0 24 24"><path d="M5 4h11l3 3v13H5z"/><path d="M9 10h6"/><path d="M9 13.5h6"/><path d="M9 17h4"/></svg></span>
+            <div><div class="tname">Loki</div><div class="tsub">로그 → S3</div></div></div>
+        </div>
+      </div>
+
+      <!-- workload -->
+      <div class="dnode cgroup pw" style="left:478px; top:234px; width:330px; height:236px;">
+        <div class="ghead"><span class="gname">demo-eks-01</span><span class="chip" style="color:var(--accent);border-color:color-mix(in srgb,var(--accent) 35%,transparent);background:color-mix(in srgb,var(--accent) 6%,#fff)">워크로드 · cattle</span></div>
+        <div class="tgrid">
+          <div class="tile"><span class="ticon i-app"><svg viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="8.5" y="13.5" width="7" height="7" rx="1.5"/></svg></span>
+            <div><div class="tname">서비스 앱</div><div class="tsub">환경 = namespace</div></div></div>
+          <div class="tile"><span class="ticon i-kar"><svg viewBox="0 0 24 24"><rect x="3" y="14.5" width="7" height="6.5" rx="1.5"/><rect x="14" y="14.5" width="7" height="6.5" rx="1.5"/><path d="M12 11V4"/><path d="M8.8 7.2L12 4l3.2 3.2"/></svg></span>
+            <div><div class="tname">Karpenter</div><div class="tsub">spot 노드 스케일</div></div></div>
+          <div class="tile"><span class="ticon i-obs"><svg viewBox="0 0 24 24"><path d="M3 14h4l2.2-6 3.4 9 2.2-5H21"/></svg></span>
+            <div><div class="tname">Prometheus</div><div class="tsub">수집 → 허브로</div></div></div>
+          <div class="tile"><span class="ticon i-pol"><svg viewBox="0 0 24 24"><path d="M12 3l7.5 3v5c0 4.8-3.2 8.4-7.5 10-4.3-1.6-7.5-5.2-7.5-10V6z"/><path d="M9 12l2.2 2.2L15.5 10"/></svg></span>
+            <div><div class="tname">Kyverno</div><div class="tsub">정책 · 격리</div></div></div>
+        </div>
+      </div>
+
+      <!-- regional -->
+      <div class="dnode regional" style="left:900px; top:222px; width:280px;">
+        <div class="rtitle2">regional — 장수 자원</div>
+        <div class="tile"><span class="ticon i-s3"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="5.5" rx="7.5" ry="2.5"/><path d="M4.5 5.5L6.5 19c.2 1.4 2.6 2.5 5.5 2.5s5.3-1.1 5.5-2.5l2-13.5"/></svg></span>
+          <div><div class="tname">S3</div><div class="tsub">state · 메트릭 · 로그</div></div></div>
+        <div class="tile"><span class="ticon i-ecr"><svg viewBox="0 0 24 24"><path d="M4 8l8-4.5L20 8v8l-8 4.5L4 16z"/><path d="M4 8l8 4.5L20 8"/><path d="M12 12.5V21"/></svg></span>
+          <div><div class="tname">ECR</div><div class="tsub">이미지 (IMMUTABLE)</div></div></div>
+        <div class="tile"><span class="ticon i-dns"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><ellipse cx="12" cy="12" rx="3.6" ry="8.5"/><path d="M3.5 12h17"/></svg></span>
+          <div><div class="tname">Route53 + ACM</div><div class="tsub">*.eks 도메인 · TLS</div></div></div>
+        <div class="tile"><span class="ticon i-sm"><svg viewBox="0 0 24 24"><rect x="5.5" y="10.5" width="13" height="9.5" rx="2"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/></svg></span>
+          <div><div class="tname">Secrets Manager</div><div class="tsub">시크릿 · 스포크 메타</div></div></div>
+      </div>
+
+    </div>
+    </div>
+
+    <div class="serve">
+      <span class="stitle">새 클러스터 편입 :</span>
+      <span class="step">terraform apply</span><span class="sep">→</span>
+      <span class="step">Secrets Manager</span><span class="sep">→</span>
+      <span class="step">ESO</span><span class="sep">→</span>
+      <span class="step">ArgoCD 등록</span><span class="sep">→</span>
+      <span class="step">ApplicationSet 배포</span>
+      <span class="chip ok">kubectl 0회</span>
+    </div>
+  </div>
+</section>
+
+<!-- ================= SLIDE 2 : 목적 + 원칙 ================= -->
+<section class="slide">
+  <div class="kicker">Why</div>
+  <h2>목적과 못 박은 원칙 5가지</h2>
+  <p class="sub"><b>EKS 운영 역량 확보가 1순위.</b> ECS 마이그레이션은 검증 수단이다. 그래서 관리형 서비스와 EKS Auto Mode를 <b>의도적으로 배제</b>했다 — 운영 부담이 비용이 아니라 목적이다.</p>
+  <div class="slide-body">
+    <div class="grid" style="gap:.8rem;">
+      <div class="card prow"><div class="num">1</div><div><h3>클러스터는 소모품이다</h3><p>이름에 시퀀스 번호(<code>-01</code>). 클러스터 안에 상태 없음, 모든 것이 Git에, DNS는 클러스터에 안 묶임. <b>예외: 허브는 소모품이 아니다</b> (ArgoCD·Thanos·Vault 상태 보유).</p></div></div>
+      <div class="card prow"><div class="num">2</div><div><h3>Terraform / GitOps 경계 = 수명주기</h3><p>계정·클러스터보다 오래 사는 것은 Terraform, 워크로드 수명주기를 따르는 것은 GitOps. <b><code>helm_release</code>·<code>kubernetes_manifest</code> 금지, 예외 0개.</b></p></div></div>
+      <div class="card prow"><div class="num">3</div><div><h3>환경은 디렉토리다, 브랜치가 아니다</h3><p><code>main</code> 하나. dev/qa/uat/prod 는 namespace + overlay 디렉토리.</p></div></div>
+      <div class="card prow"><div class="num">4</div><div><h3>이미지 태그는 불변</h3><p>ECR <code>IMMUTABLE</code>, <code>sha-&lt;gitsha&gt;</code>. 승격은 태그가 아니라 <b>digest(<code>@sha256:</code>)</b>. <code>latest</code> 금지.</p></div></div>
+      <div class="card prow"><div class="num">5</div><div><h3>관측이 워크로드보다 먼저</h3><p>로그·메트릭이 돌기 전에 어떤 서비스도 올리지 않는다 — 그래서 관측 스택이 Phase B(허브)에 있다.</p></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= SLIDE 3 : 아키텍처 ================= -->
+<section class="slide">
+  <div class="kicker">Architecture</div>
+  <h2>확정 구성 — 허브 &amp; 스포크, VPC 하나</h2>
+  <p class="sub">계정 1개 · <b>EKS 전용 신규 VPC 1개</b> (기존 ECS VPC 재사용 안 함 — 격리가 목적, 필요해지면 peering/TGW). VPC는 장수 인프라, <b>클러스터만 소모품</b>이다.</p>
+  <div class="slide-body">
+    <div class="vpcframe">
+      <div class="vpclabel">신규 VPC (Terraform) — public /24 · node /19 · ctrl-plane /28 · pod-secondary /18 × 3AZ</div>
+      <div class="arch">
+        <div class="box hub">
+          <div class="boxtitle">🛰 demo-hub-01 <span class="chip argo">허브</span></div>
+          <div class="boxsub">소모품 아님 — 상태 보유</div>
+          <div class="innerbox"><b>ArgoCD</b> — hub-and-spoke · self-manage · ApplicationSet cluster generator</div>
+          <div class="innerbox"><b>관측</b> — Thanos Receive/Query/Store/Compactor · Grafana · Alertmanager · Loki</div>
+          <div class="innerbox"><b>시크릿</b> — ESO (Secrets Manager → Vault 교체)</div>
+          <div class="innerbox"><b>노드</b> — system 노드그룹(taint) + <b>Karpenter <code>platform</code> NodePool</b></div>
+        </div>
+        <div class="box wl">
+          <div class="boxtitle">📦 demo-eks-01 <span class="chip" style="color:var(--accent);border-color:color-mix(in srgb,var(--accent) 40%,transparent);background:color-mix(in srgb,var(--accent) 10%,transparent)">워크로드</span></div>
+          <div class="boxsub">환경 = namespace (dev / qa / uat / prod)</div>
+          <div class="innerbox"><b>Karpenter</b> — <code>prod</code>(on-demand) / <code>nonprod</code>(spot) NodePool, taint로 물리 분리</div>
+          <div class="innerbox"><b>정책</b> — PSA + Kyverno(CEL) Audit→Enforce · VPC CNI default-deny</div>
+          <div class="innerbox"><b>배포</b> — Kustomize + Argo Rollouts canary(prod)</div>
+          <div class="innerbox"><b>Prometheus</b> → remote_write → 허브 Thanos</div>
+        </div>
+        <div class="box">
+          <div class="boxtitle">☁️ VPC 밖 (Terraform)</div>
+          <div class="boxsub">클러스터보다 오래 산다</div>
+          <div class="innerbox"><b>S3</b> — tfstate · thanos · loki</div>
+          <div class="innerbox"><b>ECR</b> — IMMUTABLE · scan_on_push</div>
+          <div class="innerbox"><b>Route53</b> — EKS 전용 서브도메인 존</div>
+          <div class="innerbox"><b>IAM</b> — Pod Identity · Access Entry (aws-auth 안 씀)</div>
+          <div class="innerbox"><b>SSM</b> — state 간 참조 통로 (<code>terraform_remote_state</code> 금지)</div>
+        </div>
+      </div>
+      <div class="flowline">ArgoCD sync ⟶ 스포크 &nbsp;·&nbsp; 스포크 Prometheus ⟶ remote_write ⟶ 허브 Thanos ⟶ S3 &nbsp;·&nbsp; 노드 AMI = <b>Bottlerocket 버전 핀</b> (<code>@latest</code> 금지)</div>
+    </div>
+    <div class="callout blue" style="margin-top:1rem;"><b>클러스터 2개인 이유</b> — 허브(ArgoCD·관측·시크릿)가 죽어도 워크로드는 멀쩡하고, 업그레이드 때 <b>허브가 카나리</b>가 된다. 환경 분리는 클러스터가 아니라 namespace + NodePool taint + Kyverno로 한다.</div>
+  </div>
+</section>
+
+<!-- ================= SLIDE 3.5 : Thanos 확장성 ================= -->
+<section class="slide">
+  <div class="kicker">Observability · Scaling</div>
+  <h2>Thanos 확장 — 무상태는 자동(HPA), 상태는 수동</h2>
+  <p class="sub">쓰기: Prometheus → <b>Receive Router</b>(hashring 라우팅) → <b>Ingestor</b>(TSDB 저장·S3 업로드). 읽기: Grafana → <b>Query</b>가 fan-out → 최근은 Ingestor, 과거는 <b>Store Gateway</b>(S3) → 병합.</p>
+  <div class="slide-body">
+    <div class="grid g2">
+      <div class="card">
+        <h3>📖 읽기·라우팅 — 무상태 → HPA 자동</h3>
+        <ul class="clean">
+          <li><b>Query</b> — 여러 소스에 동시 질의·병합. Grafana 창구 <span style="color:var(--accent)">→ HPA</span></li>
+          <li><b>Query Frontend</b> — 쿼리 캐싱·시간분할·재시도 <span style="color:var(--accent)">→ HPA</span></li>
+          <li><b>Receive Router</b> — remote_write 받아 hashring으로 라우팅만 <span style="color:var(--accent)">→ HPA</span></li>
+          <li class="warn">무상태(데이터 안 들고 있음) → 파드 막 늘려도 안전</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>✍️🗄️ 저장 — 상태 → 수동</h3>
+        <ul class="clean">
+          <li><b>Receive Ingestor</b> — 실시간 TSDB 저장 + S3 업로드. <code>replicas</code>=샤드 수, <code>replicationFactor</code>=복제. <b>수동 resharding</b></li>
+          <li><b>Store Gateway</b> — S3 과거 블록 조회 제공. 수동 샤딩</li>
+          <li><b>Compactor</b> — S3 압축·다운샘플·retention. <b>버킷당 1개 ⛔</b> (2개면 블록 손상)</li>
+          <li class="warn">상태(데이터 보유) → 파드 수 변하면 재분배 → HPA 금지, 미리 넉넉히</li>
+        </ul>
+      </div>
+    </div>
+    <div class="callout blue" style="margin-top:1rem;"><b>원리</b> — 무상태는 그때그때 fan-out만 하니 HPA로 자동 확장, 상태(Ingestor·Store)는 데이터를 들고 있어 파드 수가 바뀌면 hashring 재분배가 필요 → 계획적 수동 확장. Compactor는 동시성 자체가 위험해 <b>항상 1개</b>. 우리 설정: 무상태 3종 HPA + Ingestor 3샤드 · RF 2(분산+HA).</div>
+  </div>
+</section>
+
+<!-- ================= SLIDE 3.6 : 스포크→허브 관측 연결 ================= -->
+<section class="slide">
+  <div class="kicker">Observability · Cross-cluster</div>
+  <h2>스포크 → 허브 관측 연결 — Receive vs Sidecar</h2>
+  <p class="sub">크로스클러스터라 어느 쪽이든 <b>NLB(내부)</b>가 필요. 차이는 "누가 S3에 올리고, 실시간을 어디서 서빙하냐" — <b>부하 분산</b> 때문에 Sidecar+NLB 채택.</p>
+  <div class="slide-body">
+    <div class="grid g2">
+      <div class="card">
+        <h3>Receive + NLB <span style="color:var(--muted);font-weight:400">— 중앙집중</span></h3>
+        <div class="innerbox">스포크 Prometheus <code>─(NLB)→</code> 허브 <b>Receive Router</b></div>
+        <div class="innerbox">→ 허브 <b>Ingestor</b> (TSDB 저장) → <b>S3 업로드</b></div>
+        <ul class="clean" style="margin-top:.6rem">
+          <li>받기·S3 업로드 <b>모두 허브</b>. 스포크는 push만</li>
+          <li class="warn">모든 클러스터 시계열이 허브 Receive로 몰림 → <b>중앙 부하</b></li>
+        </ul>
+      </div>
+      <div class="card" style="border-color:color-mix(in srgb,var(--accent) 45%,transparent)">
+        <h3>Sidecar + NLB <span style="color:var(--accent)">— 분산 ✅ 채택</span></h3>
+        <div class="innerbox">스포크 Prometheus + <b>sidecar</b> ┬→ <b>S3 직접 업로드</b></div>
+        <div class="innerbox">└→ <b>Store API</b> <code>:10901</code> <code>←(NLB)←</code> 허브 <b>Query</b> 실시간 조회</div>
+        <ul class="clean" style="margin-top:.6rem">
+          <li>스포크가 <b>자기 데이터 자기가</b> S3에 올림 → 중앙 부하 <b>없음</b></li>
+          <li>sidecar 1개 = <b>S3 업로드(shipper) + 실시간 서빙(Store API)</b></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:.9rem">
+      <h3>조회 — Query가 fan-out해서 합친다</h3>
+      <div class="arch" style="margin-top:.5rem">
+        <div class="box"><div class="boxtitle">🗄️ 허브 Store Gateway</div><div class="boxsub">S3 읽음</div><div class="innerbox"><b>과거</b> (전 클러스터 — S3 공유라 하나로 다 커버)</div></div>
+        <div class="box"><div class="boxtitle">📡 스포크 sidecar</div><div class="boxsub">Store API (NLB)</div><div class="innerbox"><b>스포크 실시간</b> (로컬 TSDB)</div></div>
+        <div class="box"><div class="boxtitle">🛰 허브 실시간 소스</div><div class="boxsub">Receive/local</div><div class="innerbox"><b>허브 실시간</b></div></div>
+      </div>
+      <div class="flowline">Grafana → <b>Query</b> → (시간범위 최근이면 sidecar들, 과거면 Store Gateway) → <b>병합·dedup</b> → Grafana</div>
+    </div>
+    <div class="callout blue" style="margin-top:1rem;"><b>왜 Sidecar+NLB</b> — Receive는 중앙 부하, Sidecar는 <b>분산 + 실시간</b> 둘 다. 과거는 <b>허브 Store Gateway 하나</b>가 S3에서 전 클러스터 것 다 서빙(클러스터 늘어도 추가 안 됨), 실시간만 클러스터별 sidecar. 중복 업로드 없음 — 각 클러스터가 <code>external_labels</code>(cluster=…)로 자기 것만 한 번 올림.</div>
+  </div>
+</section>
+
+<!-- ================= SLIDE 4 : 버전 전략 ================= -->
+<section class="slide">
+  <div class="kicker">Version Strategy</div>
+  <h2>일부러 낮게 시작한다 — EKS 1.34</h2>
+  <p class="sub">업그레이드를 <b>실제로 해보는 것</b>이 학습 목표. standard support 중 가장 낮은 1.34에서 출발해 <b>1.35 → 1.36 두 번을 in-place로 연습</b>한다.</p>
+  <div class="slide-body">
+    <div class="grid g2">
+      <div class="card">
+        <h3>왜 1.34인가 — 진짜 breaking change가 있다</h3>
+        <ul class="clean">
+          <li><b>1.35</b> — cgroup v1 제거 · containerd 1.x 지원 마지막 · IPVS deprecated</li>
+          <li><b>1.36</b> — <code>gitRepo</code> 볼륨 영구 비활성 · <code>StrictIPCIDRValidation</code> 기본 활성 · IPVS 제거</li>
+          <li class="warn">착수 시점(F3·F4)에 릴리스 노트 + <code>list-insights</code>로 <b>재검증</b>하고 시작</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>extended support(≤1.33)로는 안 내려간다</h3>
+        <p>클러스터 시간당 <b>$0.10 → $0.60</b>. 클러스터 2개면 <b>월 +$730</b>. 업그레이드 한 번 더 해보려고 낼 돈이 아니다.</p>
+        <h3 style="margin-top:.9rem;">버전은 전부 파일에 고정</h3>
+        <p><code>versions.tf</code> · <code>addon_version</code> · Helm <code>version:</code> · AMI alias. <b><code>latest</code>·<code>*</code> 금지.</b> Renovate가 새 버전 PR을 만들고, 그 PR이 업그레이드 스터디 재료가 된다.</p>
+      </div>
+    </div>
+    <div class="card" style="margin-top:.9rem;">
+      <h3>차트·애드온 하한선 — 이 넷을 확인하고 내린다</h3>
+      <ul class="clean">
+        <li>k8s <b>1.34를 지원</b>하는가 (CRD apiVersion 불일치 방지)</li>
+        <li>의존 기능이 있는가 — ArgoCD <code>awsAuthConfig</code>+cluster generator · Kyverno CEL 정책 타입</li>
+        <li>Karpenter는 <b>EKS 호환 매트릭스</b>를 반드시 확인</li>
+        <li class="warn"><b>노출면 있는 컴포넌트(ArgoCD·Grafana·oauth2-proxy)는 알려진 CVE 없는 버전</b> — 낮게 시작 학습은 내부 컴포넌트로만</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ================= SLIDE 5 : 소유권 경계 ================= -->
+<section class="slide">
+  <div class="kicker">Ownership</div>
+  <h2>어디서 관리하나 — 수명주기가 경계다</h2>
+  <div class="slide-body">
+    <div class="grid g2">
+      <div class="card" style="border-color:color-mix(in srgb,var(--tf) 45%,transparent)">
+        <h3 style="color:var(--tf)">infra-terraform (AWS)</h3>
+        <ul class="clean">
+          <li>VPC · 서브넷 · SG · NAT · VPC 엔드포인트</li>
+          <li>EKS 컨트롤플레인 · <b>EKS 애드온 버전</b></li>
+          <li>system 노드그룹 · Karpenter용 IAM/인스턴스 프로파일/SQS</li>
+          <li>IAM role · <b>Pod Identity association</b> · Access Entry</li>
+          <li>ECR · S3(thanos·loki·state) · Route53 존</li>
+          <li>ArgoCD 부트스트랩 워크플로 (<code>.github/workflows/</code>)</li>
+        </ul>
+      </div>
+      <div class="card" style="border-color:color-mix(in srgb,var(--argo) 45%,transparent)">
+        <h3 style="color:var(--argo)">eks-gitops (클러스터 안)</h3>
+        <ul class="clean">
+          <li><b>Karpenter NodePool · EC2NodeClass</b> — 노드는 AWS 리소스지만 <b>선언은 K8s API</b></li>
+          <li>애드온 워크로드 전부 — ESO · ALB Ctrl · Kyverno · Prometheus · Thanos · Grafana · Loki · Vault…</li>
+          <li><b>ArgoCD 자신</b> (self-manage, 부트스트랩만 워크플로)</li>
+          <li>Deployment · Service · Ingress · HPA · PDB · NetworkPolicy</li>
+          <li>Namespace · Quota · LimitRange · PriorityClass</li>
+        </ul>
+      </div>
+    </div>
+    <div class="callout red"><b>손으로 하는 것은 딱 둘.</b> ① state 버킷 부트스트랩(닭-달걀) · ② <code>root-app.yaml</code> 최초 <code>kubectl apply</code> 1회. 그 외 전부 자동화 — 스포크 등록도 <b>kubectl 0회</b> (TF → SSM → ESO → cluster Secret → ApplicationSet).</div>
+    <div class="callout blue"><b>day-1 코드 규칙 핵심</b> — 버전은 variable+tfvars · 모듈은 <b>Git 태그 참조</b>(허브만 먼저 올리기 가능하게) · state는 잘게(<code>shared</code>/클러스터 분리) · state 참조는 SSM · <code>for_each</code> · <code>prevent_destroy</code>+plan JSON 게이트 · <b>차트 버전은 overlay에</b>(base에 두면 두 클러스터가 같이 올라감) · sync wave · CRD 분리+<code>Replace=true</code> · <code>manifest-generate-paths</code></div>
+  </div>
+</section>
+
+<!-- ================= SLIDE 6 : Phase A ================= -->
+<section class="slide">
+  <div class="kicker">Phase A · Terraform 기반</div>
+  <h2>A — 땅을 판다 <span class="chip tf" style="vertical-align:middle">TF</span> <span class="chip gha" style="vertical-align:middle">GHA</span></h2>
+  <div class="slide-body">
+    <div class="grid g2">
+      <div class="card"><h3>A1 · state 백엔드 부트스트랩 <span class="chip manual">수동 ①</span></h3>
+        <p>로컬 state로 S3 버킷 생성(versioning·SSE·public block) → <code>backend "s3"</code> + <code>use_lockfile</code>(TF ≥ 1.10) → <code>-migrate-state</code>. 버킷 정책으로 <code>DeleteObjectVersion</code> Deny.</p>
+        <div class="done">state가 S3에서 읽히고, 동시 apply에 lock이 걸린다</div></div>
+      <div class="card"><h3>A2 · 레포 스켈레톤 + CI</h3>
+        <p>GitHub Actions <b>OIDC</b>(액세스 키 0) · plan → PR 코멘트 → merge 후 apply(승인 게이트) · 브랜치 보호 · provider 핀 + lock 파일 커밋 · <b>Renovate</b>(버전 감시 → PR, 자동 merge off).</p>
+        <div class="done">PR에 plan이 달리고, merge 없이는 apply 불가</div></div>
+      <div class="card"><h3>A3 · 태깅·네이밍</h3>
+        <p><code>default_tags</code> · <code>demo-&lt;component&gt;-&lt;seq&gt;</code> · <b>Cost Allocation Tag 지금 활성화</b>(24h 지나야 데이터 — 안 하면 비교 baseline이 없다).</p>
+        <div class="done">새 리소스에 태그가 자동으로 붙는다</div></div>
+      <div class="card"><h3>A4 · 신규 전용 VPC</h3>
+        <p>CIDR·서브넷 전부 variable. public /24 · <b>node /19</b>(업그레이드 시 클러스터 2개 공존) · ctrl-plane 전용 /28 · pod-secondary /18(탈출구). NAT AZ당 1 · VPC 엔드포인트. 태그 <code>karpenter.sh/discovery=demo</code> — <b>클러스터 이름 금지</b>(서브넷은 공유 자원). 출력은 SSM으로.</p>
+        <div class="done">VPC가 뜨고 SSM에 서브넷 ID가 있다</div></div>
+      <div class="card" style="grid-column:1/-1"><h3>A5 · ECR + 관측 버킷 + DNS 존</h3>
+        <p>ECR <code>IMMUTABLE</code>·scan_on_push · S3 demo-thanos/demo-loki · Thanos·Loki IAM 초안 · <b>Route53 EKS 전용 서브도메인 존 + NS 위임</b> (B5의 external-dns·cert-manager가 전제한다 — B7에서 만들면 순서가 꼬인다).</p>
+        <div class="done">같은 태그 재푸시가 거부되고, dig NS로 위임이 확인된다</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= SLIDE 7 : Phase B ================= -->
+<section class="slide">
+  <div class="kicker">Phase B · 허브 클러스터</div>
+  <h2>B — 허브를 세운다 · 부트스트랩 순서가 전부다</h2>
+  <div class="slide-body">
+    <div class="chain">
+      <div class="step">B1·B2 클러스터<small>TF · 1.34 · system 노드(taint)</small></div><span class="sep">→</span>
+      <div class="step">B3 ArgoCD<small>workflow_dispatch = break-glass</small></div><span class="sep">→</span>
+      <div class="step">B4 self-manage<small>root-app 수동 apply ②</small></div><span class="sep">→</span>
+      <div class="step">B5-0 Karpenter ⚠️<small>관측 스택이 뜰 노드</small></div><span class="sep">→</span>
+      <div class="step">B5 기반 애드온<small>SC → ESO → ALB Ctrl…</small></div><span class="sep">→</span>
+      <div class="step">B6 관측 스택<small>Thanos 하나씩</small></div><span class="sep">→</span>
+      <div class="step">B7 Ingress<small>port-forward 졸업</small></div>
+    </div>
+    <div class="callout"><b>왜 ALB도 없는데 ArgoCD가 먼저인가</b> — ALB Controller를 설치하는 주체가 ArgoCD다(원칙 2). ArgoCD → ALB Controller → Ingress 순서이고, 그 사이는 <code>port-forward</code>로 다리를 놓는다. Helm으로 ALB를 먼저 깔면 부트스트랩 경로가 둘이 된다.</div>
+    <div class="grid g3">
+      <div class="card"><h3>B1·B2 — 클러스터</h3><p>audit log 5종 on · Access Entry · system 노드 2~3개(<code>CriticalAddonsOnly</code> taint, Karpenter replica 2의 antiAffinity 때문에 1개면 Pending) · <b>EBS CSI 명시 설치</b>(없으면 PVC 영구 Pending) · Karpenter IAM/SQS 준비 · <code>prevent_destroy</code> · 출력은 SSM.</p></div>
+      <div class="card"><h3>B3·B4 — ArgoCD</h3><p>차트 버전 낮게 고정(CVE 없는 선) · repo Secret은 워크플로가 생성 → ESO로 이관 · self-manage 전환 · <b>허브 자신의 cluster Secret</b>(<code>demo-hub-01</code>) 커밋 — 없으면 cluster generator가 허브를 못 잡는다.</p></div>
+      <div class="card"><h3>B5·B6·B7 — 애드온·관측</h3><p><b>B5-0 Karpenter 먼저</b>(platform NodePool) → StorageClass gp3 default → ESO → metrics-server → cert-manager → ALB Ctrl → external-dns(upsert-only). B6는 Thanos Receive→Query→Store→<b>Compactor(반드시 1 replica)</b>→Grafana→알림 실발동→허브 Prometheus. B7에서 Ingress + <code>group.name</code> ALB 공유.</p></div>
+    </div>
+    <div class="done" style="margin-top:.9rem;">도메인으로 ArgoCD·Grafana 접속 · Grafana에 허브 메트릭 · 알림 실제 수신 · port-forward는 비상용</div>
+  </div>
+</section>
+
+<!-- ================= SLIDE 8 : Phase C ================= -->
+<section class="slide">
+  <div class="kicker">Phase C · 워크로드 클러스터</div>
+  <h2>C — 스포크를 자동으로 편입시킨다</h2>
+  <div class="slide-body">
+    <div class="card" style="margin-bottom:.9rem;">
+      <h3>C2 · 스포크 등록 — <b>kubectl 0회</b></h3>
+      <div class="chain" style="margin-bottom:0;">
+        <div class="step">terraform apply<small>role(정책 0)+trust · Access Entry</small></div><span class="sep">→</span>
+        <div class="step">SSM 파라미터<small>name/endpoint/caData/roleARN</small></div><span class="sep">→</span>
+        <div class="step">허브 ESO<small>ExternalSecret</small></div><span class="sep">→</span>
+        <div class="step">cluster Secret<small>secret-type: cluster label</small></div><span class="sep">→</span>
+        <div class="step">ApplicationSet<small>cluster generator → 자동 생성</small></div>
+      </div>
+      <p style="margin-top:.6rem;">삭제는 역순 — 파라미터 삭제 → Secret 소멸 → Application 소멸 → destroy. 이래야 원칙 1(소모품)이 말로만이 아니다.</p>
+    </div>
+    <div class="grid g2">
+      <div class="card"><h3>C3 · Karpenter (워크로드)</h3>
+        <p>EKS 1.34 호환 버전 확인 후 고정. EC2NodeClass는 Bottlerocket <b>AMI 버전 핀</b>. NodePool <code>prod</code>(on-demand, 업무시간 disruption 0%) / <code>nonprod</code>(spot, 공격적 consolidation). <b><code>expireAfter: 720h</code> 명시</b> — 안 정하면 노드가 몇 달 살아남아 커널 패치가 안 된다.</p></div>
+      <div class="card"><h3>C4 · 기반 애드온 + 워크로드 전용</h3>
+        <p>B5와 같은 <code>platform/base/</code> 세트를 overlay로. 추가: <b>KEDA · Kyverno(CEL, Audit부터) · node-problem-detector · efs-csi · fluent-bit</b>(Loki 연결은 E1).</p></div>
+      <div class="card"><h3>C5 · 멀티테넌시 — 지금 해야 한다</h3>
+        <p>PriorityClass prod(1000)&gt;…&gt;dev(100) · Kyverno <code>GeneratingPolicy</code>로 namespace마다 Quota+LimitRange+<b>default-deny</b> 자동 부착 · ValidatingPolicy(request·preStop·PDB 필수, latest 금지) · PSA. <b>NodePool taint 물리 분리가 핵심</b> — Quota는 총량만 막는다. ⚠️ VPC CNI netpol은 파드 기동 직후 미적용 창이 있다 → strict mode 결정.</p></div>
+      <div class="card"><h3>C1 · C6</h3>
+        <p><b>C1</b> — B1 모듈 재사용(<b>같은 Git 태그</b>), 버전·애드온 허브와 동일. <b>C6</b> — 워크로드 Prometheus → 허브 Thanos remote_write, <code>cluster=demo-eks-01</code> 라벨.</p>
+        <div class="done">허브 Grafana에서 두 클러스터를 구분해서 본다</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= SLIDE 9 : Phase D & E ================= -->
+<section class="slide">
+  <div class="kicker">Phase D · E</div>
+  <h2>D — 첫 서비스 · E — 나머지 플랫폼</h2>
+  <div class="slide-body">
+    <div class="grid g2">
+      <div class="card">
+        <h3>D1 · 골든 템플릿</h3>
+        <p><code>apps/_template/base/</code> — Rollout · Service · Ingress · HPA · PDB · NetworkPolicy · probe 3종 · <b>preStop 5~10s sleep</b> · topologySpread. 리소스 규칙: <b>memory request==limit · cpu는 request만</b>(cpu limit = CFS throttling = "EKS 느리다"의 최다 원인). Kustomize <code>openapi</code> 설정 — 없으면 Rollout에 image transformer가 <b>조용히 미적용</b>.</p>
+        <div class="done">새 서비스가 overlay 1개로 올라간다</div>
+      </div>
+      <div class="card">
+        <h3>D2 · 첫 서비스 + canary</h3>
+        <p>앱 CI: build → ECR push(<code>sha-&lt;gitsha&gt;</code>) → <b>digest를 gitops에 커밋</b>. prod는 Rollouts canary 10→50→100%. 검증은 <b>ALB 타겟그룹 실측</b>으로 — UI 표시만 믿지 않는다.</p>
+        <div class="done">카나리가 실제 트래픽을 나눈다</div>
+      </div>
+    </div>
+    <div class="card" style="margin-top:.9rem;">
+      <h3>E — 플랫폼 마감</h3>
+      <table>
+        <tr><td>E1 Loki + fluent-bit</td><td>S3 백엔드 · Grafana에서 메트릭↔로그 이동 확인</td></tr>
+        <tr><td>E2 Vault</td><td>Raft HA · <b>스냅샷 백업 필수</b>(없으면 허브 유실 = 시크릿 영구 상실) · ESO 백엔드를 Secrets Manager → Vault 교체 · reloader</td></tr>
+        <tr><td>E3 OpenCost</td><td>팀별 비용 — A3 태그가 전제</td></tr>
+        <tr><td>E4 policy-reporter</td><td>Kyverno 위반 집계 UI</td></tr>
+        <tr><td>E5 oauth2-proxy</td><td>허브 UI 3개 SSO</td></tr>
+        <tr><td>E6 Backstage</td><td>서비스가 여러 개 올라간 뒤에야 의미</td></tr>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ================= SLIDE 10 : Phase F ================= -->
+<section class="slide">
+  <div class="kicker">Phase F · 업그레이드 스터디</div>
+  <h2>F — 이게 목표였다 🎯 <span style="font-size:.9rem;color:var(--muted);font-weight:500;">한 번에 하나만 올린다 · 쉬운 것부터</span></h2>
+  <div class="slide-body">
+    <div class="card">
+      <table>
+        <tr><th style="width:9rem">단계</th><th>무엇</th><th>배우는 것</th></tr>
+        <tr><td>F1</td><td>EKS 애드온 마이너 1개</td><td>가장 안전한 연습 — <code>describe-addon-versions</code> → <code>resolve_conflicts</code> → 롤백</td></tr>
+        <tr><td>F2</td><td>Helm 차트 1개</td><td>CRD 업그레이드 · values 스키마 변경 · sync wave</td></tr>
+        <tr><td>F3</td><td><b>EKS 1.34 → 1.35 in-place</b></td><td><code>list-insights</code> → <b>허브 먼저 → 1주 관찰 → 워크로드</b>. cgroup v1 · containerd 1.x · IPVS 대응</td></tr>
+        <tr><td>F4</td><td><b>EKS 1.35 → 1.36 in-place</b></td><td><code>gitRepo</code> 제거 · <code>StrictIPCIDRValidation</code>(비정규 CIDR 전수 점검) · IPVS 제거</td></tr>
+        <tr><td>F5</td><td>노드 AMI 올리기</td><td>AMI 핀 변경 → Karpenter drift 자동 교체 → disruption budget이 실제로 속도를 제한하는지</td></tr>
+        <tr><td>F6</td><td><b>blue/green — demo-eks-02를 Cilium으로</b></td><td>같은 VPC에 새 클러스터 → generator 자동 편입 → 트래픽 이동 → <code>-01</code> 삭제. <b>소모품 실습 + Cilium 학습 + 재구축 RTO 실측</b></td></tr>
+      </table>
+    </div>
+    <div class="grid g2" style="margin-top:.9rem;">
+      <div class="callout" style="margin:0;"><b>롤백의 진실 (2026-07 출시 기능)</b> — 컨트롤플레인 마이너는 업그레이드 후 <b>7일 내 롤백 가능</b>. 단 ① 노드가 컨트롤플레인보다 새 버전이면 안 된다 — <b>노드 먼저 롤백</b> ② <b>애드온은 자동 롤백 안 된다</b>. 창을 넘기면 blue/green뿐.</div>
+      <div class="callout blue" style="margin:0;"><b>운영 리듬</b> — 목표 N-1 · 분기 1회 윈도우 · extended support 진입 금지($0.10→$0.60/h). 순서는 항상 <b>허브가 카나리</b>: 허브 컨트롤플레인→애드온→노드 → 1주 관찰 → 워크로드. 애드온은 자동 갱신 안 됨 — 별도 승격, 한 번에 1 마이너.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= SLIDE 11 : 백로그 ================= -->
+<section class="slide">
+  <div class="kicker">Backlog</div>
+  <h2>나중에 할 것 — "안 한다"가 아니라 꺼낼 조건이 있다</h2>
+  <div class="slide-body">
+    <div class="card">
+      <table>
+        <tr><th style="width:13rem">항목</th><th>꺼내는 조건</th></tr>
+        <tr><td>Cilium</td><td><b>F6 blue/green 때</b> 새 클러스터를 Cilium으로 — CNI 교체와 소모품 실습을 하나로</td></tr>
+        <tr><td>Velero</td><td>PV·stateful이 생길 때, 또는 F6 직전 — 실제 복구를 검증</td></tr>
+        <tr><td>Tempo · Pyroscope</td><td>서비스 5개+가 서로 호출할 때 (계측만 OTel로 미리 고정)</td></tr>
+        <tr><td>기존 ECS VPC 연결</td><td>EKS 앱이 기존 RDS·ElastiCache를 호출해야 할 때 — peering/TGW + SG 규칙</td></tr>
+        <tr><td>private-only 엔드포인트</td><td>B5 애드온이 다 붙은 뒤</td></tr>
+        <tr><td>Gateway API · 서비스메시</td><td>Ingress로 표현 못 하는 요구 · mTLS 규제 요구가 생기면</td></tr>
+        <tr><td>ECS 마이그레이션 (226개)</td><td>D1~D2 완료 후 — 첫 서비스 실측으로 처리량을 재고 일정 역산</td></tr>
+        <tr><td style="text-decoration:line-through">Crossplane · ACK</td><td><b>미채택</b>(보류 아님) — Terraform과 AWS 리소스 소유권 충돌</td></tr>
+      </table>
+    </div>
+    <div class="callout blue"><b>아직 안 정한 것 (데드라인)</b> — VPC CIDR 실제 값(A4 전, 기존 대역과 비중복) · NodePool 세분화/spot 비율(C3 전) · namespace 명명·Quota 수치(C5 전) · request/limit 기준값(D1~D2 실측으로)</div>
+  </div>
+</section>
+
+<!-- ================= SLIDE 12 : 리뷰 반영 ================= -->
+<section class="slide">
+  <div class="kicker">Changelog</div>
+  <h2>2026-09-18 리뷰에서 고친 것</h2>
+  <p class="sub">계획 리뷰에서 나온 구조적 공백 2개 + 순서 꼬임 2개 + 보강 사항을 반영했다.</p>
+  <div class="slide-body">
+    <div class="grid g2">
+      <div class="card"><h3>🔴 허브에도 Karpenter (B5-0 신설)</h3><p>system 노드는 taint가 있어 Karpenter·CoreDNS급만 뜬다. Thanos·Grafana·Loki·Vault가 뜰 노드 공급자가 없었다 → 허브에 <code>platform</code> NodePool 추가, <b>B6(관측)보다 먼저</b>.</p></div>
+      <div class="card"><h3>🔴 discovery 태그에서 클러스터 이름 제거</h3><p><code>karpenter.sh/discovery=demo-eks-01</code> → <code>demo</code>. 서브넷은 허브·워크로드·미래의 <code>-02</code>가 공유한다 — 클러스터 이름을 박으면 허브 Karpenter와 F6 blue/green이 깨진다.</p></div>
+      <div class="card"><h3>🟠 Route53 존을 A5로 앞당김</h3><p>B5의 external-dns·cert-manager가 존을 전제하는데 존이 B7에 있었다. B7은 인증서 방식(ACM vs cert-manager) 확정만.</p></div>
+      <div class="card"><h3>🟠 허브 자신의 cluster Secret (B4-5)</h3><p>암묵적 in-cluster는 Secret이 아니라 cluster generator에 안 걸리고, 이름도 <code>in-cluster</code>라 <code>overlays/demo-hub-01</code>과 매칭이 안 된다 → declarative Secret 커밋.</p></div>
+      <div class="card"><h3>🟡 롤백 조건 명확화 (F3 · §6.4)</h3><p>7일 롤백은 <b>컨트롤플레인만</b>. 노드가 더 새 버전이면 안 됨(노드 먼저 롤백) · 애드온은 자동 롤백 안 됨. AWS 공식 문서로 검증 완료 (2026-07 출시).</p></div>
+      <div class="card"><h3>🟢 그 외</h3><p>노출면 컴포넌트는 CVE 없는 버전 하한 추가 · <code>use_lockfile</code>은 TF ≥ 1.10 · 부트스트랩 OIDC role의 허브 Access Entry 명시(= break-glass 겸용) · VPC CNI netpol strict mode 결정 항목 · §6.1 모듈 위치를 <code>spoke-registration</code>으로 정정 · 죽은 번호 참조(11번·21번…) → A~F 체계로 통일.</p></div>
+    </div>
+  </div>
+  <div class="foot-note">원본 문서: <span class="mono">EKS-MIGRATION-PLAN.md</span> · 이 덱: <span class="mono">EKS-MIGRATION-DECK.html</span> · ← → 키로 이동</div>
+</section>
+
+<!-- ================= SLIDE 13 : Karpenter 딥다이브 ================= -->
+<section class="slide">
+  <div class="kicker">Deep Dive · Karpenter</div>
+  <h2>Karpenter — 클러스터마다 필수, AWS 리소스는 클러스터 생성 시 함께</h2>
+  <p class="sub">Karpenter <b>자체 설치는 GitOps</b>(B5-0 허브 / C3 워크로드)지만, <b>Karpenter가 쓸 AWS 리소스는 <code>modules/eks-cluster</code>가 클러스터 만들 때 함께</b> 만든다(<code>karpenter-prep.tf</code>). 노드 오토스케일러라 클러스터마다 하나씩 있어야 하고, 그 권한·큐가 없으면 노드를 못 띄운다.</p>
+  <div class="slide-body">
+
+    <!-- 라이프사이클 흐름 -->
+    <div class="chain">
+      <div class="step">Pending 파드<small>스케줄 안 됨</small></div><span class="sep">→</span>
+      <div class="step">Karpenter 컨트롤러<small>① 권한으로 감지·계산</small></div><span class="sep">→</span>
+      <div class="step">ec2:RunInstances<small>적합 인스턴스 생성</small></div><span class="sep">→</span>
+      <div class="step">새 EC2 부팅<small>② 노드 role</small></div><span class="sep">→</span>
+      <div class="step">클러스터 조인<small>② Access Entry(EC2)</small></div><span class="sep">→</span>
+      <div class="step">파드 스케줄 ✓</div>
+    </div>
+    <div class="flowline" style="margin-bottom:1rem;">중단 시 &nbsp; spot 회수·유지보수 이벤트 <b>→ EventBridge → SQS(③) → Karpenter가 미리 감지 → cordon+drain → 대체 노드</b> &nbsp;(요청 흘리지 않고 graceful)</div>
+
+    <!-- 3개 리소스 그룹 -->
+    <div class="grid g3">
+      <div class="box" style="border-color:color-mix(in srgb,var(--tf) 45%,transparent)">
+        <div class="boxtitle">① 컨트롤러 신원 <span class="chip tf">Pod Identity</span></div>
+        <div class="boxsub">Karpenter 파드가 AWS를 부를 권한</div>
+        <div class="innerbox"><b>iam_role.karpenter_controller</b><br>컨트롤러가 assume 하는 role</div>
+        <div class="innerbox"><b>iam_role_policy</b> (인라인)<br>RunInstances·CreateFleet·Describe* · <b>Pricing</b>:GetProducts · <b>iam:PassRole</b>(노드role) · InstanceProfile 관리 · SQS 읽기 · eks:DescribeCluster · ssm(AMI alias)</div>
+        <div class="innerbox"><b>eks_pod_identity_association</b><br>이 role ↔ <code>karpenter</code> SA(kube-system) 바인딩. 키 없이 권한 획득</div>
+      </div>
+
+      <div class="box" style="border-color:color-mix(in srgb,var(--accent) 45%,transparent)">
+        <div class="boxtitle">② 노드 신원 <span class="chip" style="color:var(--accent);border-color:color-mix(in srgb,var(--accent) 40%,transparent);background:color-mix(in srgb,var(--accent) 10%,transparent)">EC2 → 클러스터</span></div>
+        <div class="boxsub">Karpenter가 띄운 EC2가 클러스터에 붙는 권한</div>
+        <div class="innerbox"><b>iam_role.karpenter_node</b><br>노드가 쓸 role — <b>EC2NodeClass가 이 이름을 참조</b></div>
+        <div class="innerbox"><b>정책 4종 attach</b><br>EKSWorkerNode · ECR ReadOnly · EKS_CNI · SSMManagedInstanceCore(Bottlerocket는 SSH 없음→SSM세션)</div>
+        <div class="innerbox"><b>eks_access_entry</b> (type <code>EC2_LINUX</code>)<br>노드도 Access Entry로 클러스터 API 인증 — aws-auth 안 씀(원칙)</div>
+      </div>
+
+      <div class="box" style="border-color:color-mix(in srgb,var(--warn) 45%,transparent)">
+        <div class="boxtitle">③ 중단 감지 <span class="chip warn">graceful</span></div>
+        <div class="boxsub">spot 회수·유지보수를 미리 알고 안전하게 비움</div>
+        <div class="innerbox"><b>sqs_queue.karpenter</b><br>중단 이벤트 큐 (retention 300s, SSE)</div>
+        <div class="innerbox"><b>sqs_queue_policy</b><br>EventBridge가 큐에 넣도록 허용</div>
+        <div class="innerbox"><b>cloudwatch_event_rule × 4</b><br>spot-interruption · rebalance · instance-state-change · health(scheduled)</div>
+        <div class="innerbox"><b>cloudwatch_event_target × 4</b><br>각 rule → SQS 로 연결</div>
+      </div>
+    </div>
+
+    <div class="callout blue" style="margin-top:1rem;"><b>왜 클러스터 생성 시 만드나</b> — Karpenter가 노드를 띄우려면 ①컨트롤러 권한 + ②노드 role/Access Entry가 <b>먼저</b> 있어야 한다. 이게 없으면 GitOps로 Karpenter를 깔아도 <code>RunInstances</code> 거부·노드 조인 실패. 그래서 "AWS 뼈대"는 모듈(TF)이 깔고, "Karpenter 설치 + NodePool·EC2NodeClass"는 GitOps가 얹는다.</div>
+
+    <div class="grid g2">
+      <div class="callout" style="margin:0;"><b>모듈(TF)이 만드는 것</b> — 위 ①②③ 전부 (권한·큐·이벤트). 클러스터당 1세트. 허브·워크로드 동일 모듈</div>
+      <div class="callout red" style="margin:0;"><b>GitOps가 얹는 것</b> — Karpenter 차트 설치 + <code>NodePool</code>(prod/nonprod taint·spot) + <code>EC2NodeClass</code>(Bottlerocket AMI핀, discovery 태그 <code>demo</code>로 서브넷/SG 탐색)</div>
+    </div>
+
+  </div>
+</section>
+
+</div>
+
+<div id="dots"></div>
+<div id="nav">
+  <span id="counter">1 / 1</span>
+  <button id="prev" aria-label="이전">‹</button>
+  <button id="next" aria-label="다음">›</button>
+</div>
+<div id="hint">← → · Space 로 이동</div>
+
+<script>
+(function () {
+  const slides = Array.from(document.querySelectorAll('.slide'));
+  const dotsEl = document.getElementById('dots');
+  const counter = document.getElementById('counter');
+  const progress = document.getElementById('progress');
+  let i = 0;
+
+  slides.forEach((_, idx) => {
+    const d = document.createElement('span');
+    d.addEventListener('click', () => go(idx));
+    dotsEl.appendChild(d);
+  });
+  const dots = Array.from(dotsEl.children);
+
+  function go(n) {
+    n = Math.max(0, Math.min(slides.length - 1, n));
+    slides.forEach((s, idx) => {
+      s.classList.toggle('active', idx === n);
+      s.classList.toggle('prev', idx < n);
+    });
+    dots.forEach((d, idx) => d.classList.toggle('on', idx === n));
+    counter.textContent = (n + 1) + ' / ' + slides.length;
+    progress.style.width = ((n + 1) / slides.length * 100) + '%';
+    i = n;
+    location.hash = 's' + (n + 1);
+  }
+
+  document.getElementById('prev').addEventListener('click', () => go(i - 1));
+  document.getElementById('next').addEventListener('click', () => go(i + 1));
+  document.addEventListener('keydown', (e) => {
+    if (['ArrowRight', ' ', 'PageDown'].includes(e.key)) { e.preventDefault(); go(i + 1); }
+    else if (['ArrowLeft', 'PageUp'].includes(e.key)) { e.preventDefault(); go(i - 1); }
+    else if (e.key === 'Home') go(0);
+    else if (e.key === 'End') go(slides.length - 1);
+  });
+
+  // touch swipe
+  let tx = null;
+  document.addEventListener('touchstart', e => tx = e.touches[0].clientX, {passive:true});
+  document.addEventListener('touchend', e => {
+    if (tx === null) return;
+    const dx = e.changedTouches[0].clientX - tx;
+    if (Math.abs(dx) > 60) go(i + (dx < 0 ? 1 : -1));
+    tx = null;
+  }, {passive:true});
+
+  // 구성도 다이어그램: 고정 좌표계(1240x598)를 화면 폭에 맞춰 스케일
+  function fitDiagram() {
+    document.querySelectorAll('.dfit').forEach(w => {
+      const d = w.querySelector('.diagram');
+      const avail = w.clientWidth || w.parentElement.clientWidth;
+      const s = Math.min(1, avail / 1240);
+      d.style.transform = 'translateX(-50%) scale(' + s + ')';
+      w.style.height = (570 * s) + 'px';
+    });
+  }
+  window.addEventListener('resize', fitDiagram);
+  fitDiagram();
+
+  const m = location.hash.match(/^#s(\d+)$/);
+  go(m ? parseInt(m[1], 10) - 1 : 0);
+})();
+</script>
+</body>
+</html>

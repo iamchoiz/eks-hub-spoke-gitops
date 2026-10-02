@@ -1,0 +1,34 @@
+# ⭐ ArgoCD 계정 장부 — GitHub Org 버전 (지금은 미사용 — 개인 계정이라 values-accounts.yaml 사용 중).
+#
+# ▶ org 전환 절차:
+#   1. GitHub org 생성 + 팀 구성 (예: platform-admins), OAuth App 을 org 소유로 이전(또는 재생성 후 SM 값 교체)
+#   2. 아래 <org-name>/<team-name> 채우기
+#   3. _apps/argocd.yaml 의 valueFiles 에서 values-accounts.yaml → 이 파일로 교체 (한 줄)
+#
+# 이 파일은 자급자족 — dex.config 는 문자열이라 통째로 override 됨 (values.yaml 의 개인용 dex.config 를 덮음).
+# 효과: org 멤버만 로그인 가능(1차 방어) + 팀 멤버십(groups 클레임)으로 권한(2차) — 사람 관리가 GitHub 팀에서 끝남.
+argo-cd:
+  configs:
+    cm:
+      dex.config: |
+        connectors:
+          - type: github
+            id: github
+            name: GitHub
+            config:
+              clientID: $argocd-github-sso:client_id
+              clientSecret: $argocd-github-sso:client_secret
+              useLoginAsID: true
+              loadAllGroups: false
+              orgs:
+                - name: <org-name> # org 멤버만 로그인 허용 + 소속 팀이 groups 클레임으로 들어옴
+                  # teams: [platform-admins] # 특정 팀만으로 로그인 자체를 더 좁힐 때
+    rbac:
+      policy.default: "" # 로그인 돼도(=org 멤버) 팀 매핑 없으면 무권한
+      scopes: "[groups]" # policy 주체 = 팀 (형식: <org>:<team>)
+      policy.csv: |
+        g, <org-name>:platform-admins, role:admin
+        # g, <org-name>:developers, role:readonly
+        # 플랫폼별 배포권 예시:
+        # p, role:tl-deployer, applications, sync, demo-app/*, allow
+        # g, <org-name>:demo-app-team, role:tl-deployer

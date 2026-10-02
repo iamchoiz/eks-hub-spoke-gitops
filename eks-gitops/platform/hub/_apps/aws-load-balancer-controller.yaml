@@ -1,0 +1,31 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: aws-load-balancer-controller
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: hub
+  source:
+    repoURL: https://aws.github.io/eks-charts
+    chart: aws-load-balancer-controller
+    targetRevision: 1.10.1 # verify at sync (appVersion v2.11.x)
+    helm:
+      valuesObject:
+        clusterName: demo-hub-01
+        region: ap-northeast-2
+        vpcId: vpc-0e5d4a6661e7dc1ee
+        serviceAccount:
+          create: true
+          name: aws-load-balancer-controller # Pod Identity association 이 이 SA 에
+        replicaCount: 1
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kube-system
+  syncPolicy:
+    syncOptions:
+      - ServerSideApply=true
+    automated:
+      selfHeal: true
+      prune: true

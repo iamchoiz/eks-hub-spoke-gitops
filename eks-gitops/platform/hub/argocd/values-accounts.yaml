@@ -1,0 +1,16 @@
+# ⭐ ArgoCD 계정/권한 장부 — 사람 추가·강등·추방은 이 파일만 커밋.
+# (SSO 배선 자체는 values.yaml 의 dex.config — org 로그인 제한도 거기. 여긴 "누가 뭘 할 수 있나"만)
+#
+# 문법: p = 롤의 능력 정의, g = 사람(이메일)↔롤 연결. 내장 롤 = role:admin / role:readonly.
+# 프로젝트 단위 예시:
+#   p, role:tl-deployer, applications, sync, demo-app/*, allow
+#   g, dev1@example.com, role:tl-deployer
+argo-cd:
+  configs:
+    rbac:
+      policy.default: "" # 기본 무권한 — 개인 GitHub 는 로그인 시도를 못 막아서 여기가 방어선
+      scopes: "[email]" # policy 주체 = 이메일 클레임
+      policy.csv: |
+        g, admin@example.com, role:admin
+        g, dev@example.com, role:admin
+        # org 전환 시: 이 파일 대신 values-accounts-org.yaml 로 (_apps/argocd.yaml valueFiles 교체)

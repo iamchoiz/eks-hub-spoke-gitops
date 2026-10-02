@@ -1,0 +1,39 @@
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: platform
+spec:
+  template:
+    spec:
+      requirements:
+        - key: kubernetes.io/arch
+          operator: In
+          values: ["amd64", "arm64"] # 둘 다 허용 = spot 확보 쉬움 (멀티아치 이미지 전제)
+        - key: kubernetes.io/os
+          operator: In
+          values: ["linux"]
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["spot"] # 학습용 — 전부 spot
+        - key: karpenter.k8s.aws/instance-category
+          operator: In
+          values: ["t", "m", "c"]
+        - key: karpenter.k8s.aws/instance-generation
+          operator: Gt
+          values: ["6"] # 최신 세대 (t3 제외, 저렴+성능)
+        - key: karpenter.k8s.aws/instance-memory
+          operator: Gt
+          values: ["3000"] # 4GB+ 허용 (단위 MiB, 4GiB=4096). 2GB tiny 는 계속 차단.
+          # Karpenter 가 pending 파드 총량에 맞춰 최소 인스턴스 선택 → 워크로드 적으면 4GB, 크면 8GB 자동.
+      nodeClassRef:
+        group: karpenter.k8s.aws
+        kind: EC2NodeClass
+        name: default
+      expireAfter: 720h # 30일 — 노드 순환(커널 패치). 미지정 시 몇 달 방치되는 것 방지
+  disruption:
+    consolidationPolicy: WhenEmptyOrUnderutilized
+    consolidateAfter: 1m
+    budgets:
+      - nodes: "10%" # 동시 교체 상한 (한꺼번에 안 비우게)
+  limits:
+    cpu: "16" # 학습용 폭주 방지 상한

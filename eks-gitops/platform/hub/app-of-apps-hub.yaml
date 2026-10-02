@@ -1,0 +1,20 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: app-of-apps-hub
+  namespace: argocd
+spec:
+  project: hub
+  source:
+    repoURL: git@github.com:your-org/eks-hub-spoke-gitops.git
+    path: platform/hub/_apps # 자식 Application 들이 모인 디렉토리
+    targetRevision: main
+    directory:
+      recurse: true # _apps 안의 모든 Application yaml 을 등록
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      selfHeal: true
+      prune: true # _apps 에서 yaml 을 지우면 해당 Application 도 제거

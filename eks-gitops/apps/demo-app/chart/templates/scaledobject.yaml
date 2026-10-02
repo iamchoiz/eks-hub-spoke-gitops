@@ -1,0 +1,103 @@
+{{- if .Values.keda.enabled }}
+{{- $name := printf "demo-%s" .Values.service }}
+{{- $albTrigger := or .Values.keda.requestCount.enabled .Values.keda.responseTime.enabled }}
+{{- $albDims := "" }}
+{{- if $albTrigger }}
+{{- $albDims = printf "%s;%s" (required "keda.alb.targetGroup 필수 (targetgroup/k8s-.../<hash>)" .Values.keda.alb.targetGroup) (required "keda.alb.loadBalancer 필수 (app/.../<hash>)" .Values.keda.alb.loadBalancer) }}
+{{- end }}
+{{- /* AWS 트리거가 하나라도 켜지면 인증 리소스 필요.
+       provider aws = KEDA operator 자신의 크레덴셜(EKS Pod Identity, keda-operator SA) 사용 —
+       TF 로 keda-operator Pod Identity association 선행 필수 (없으면 트리거 에러) */}}
+{{- if or $albTrigger .Values.keda.sqs.enabled }}
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata:
+  name: {{ $name }}-aws
+  labels:
+    app: {{ $name }}
+spec:
+  podIdentity:
+    provider: aws
+---
+{{- end }}
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ $name }}
+  labels:
+    app: {{ $name }}
+spec:
+  scaleTargetRef:
+    apiVersion: {{ .Values.rollout.enabled | ternary "argoproj.io/v1alpha1" "apps/v1" }}
+    kind: {{ .Values.rollout.enabled | ternary "Rollout" "Deployment" }}
+    name: {{ $name }}
+  # min/max/cpu 는 hpa 블록 재사용 — keda 는 hpa 의 대체재라 개수 정책은 한 곳(hpa)에서만
+  minReplicaCount: {{ .Values.hpa.min }}
+  maxReplicaCount: {{ .Values.hpa.max }}
+  {{- with .Values.keda.behavior }}
+  # 스케일 판단 기준(HPA behavior 표준 그대로) — 미설정 시 k8s 기본(축소 300s 안정화, 증설 즉시)
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        {{- toYaml . | nindent 8 }}
+  {{- end }}
+  # HPA 는 트리거별 필요 파드수를 각각 계산해 "최대값" 채택 — 요청수·응답시간·CPU 중 하나만 넘어도 증설
+  triggers:
+    # CPU 는 항상 baseline — 외부 메트릭 트리거가 죽어도 최소한의 스케일링 유지
+    - type: cpu
+      metricType: Utilization
+      metadata:
+        value: {{ .Values.hpa.cpu | quote }}
+    {{- with .Values.keda.requestCount }}
+    {{- if .enabled }}
+    # [양] ALB RequestCountPerTarget(분당 합계) — 파드당 요청수가 targetValue 넘으면 증설.
+    # CPU 보다 트래픽에 선행 반응. web(Rollout) 은 stable TG 기준 — canary 중엔 90% 트래픽이라 근사치로 충분
+    - type: aws-cloudwatch
+      authenticationRef:
+        name: {{ $name }}-aws
+      metadata:
+        namespace: AWS/ApplicationELB
+        metricName: RequestCountPerTarget
+        dimensionName: TargetGroup;LoadBalancer
+        dimensionValue: {{ $albDims }}
+        metricStat: Sum
+        metricStatPeriod: "60"      # 1분 단위 합계 = 분당 요청수
+        metricCollectionTime: "300" # 최근 5분 창 — ALB 지표는 2~3분 지연 발행이라 120 이면 항상 빈 구간만 봄(실측)
+        targetMetricValue: {{ .targetValue | quote }}
+        minMetricValue: "0"         # 데이터 없음(TG 교체 직후 등) = 0 취급 → min 유지, CPU 트리거가 방어
+        awsRegion: {{ $.Values.keda.awsRegion }}
+    {{- end }}
+    {{- end }}
+    {{- with .Values.keda.responseTime }}
+    {{- if .enabled }}
+    # [질] ALB TargetResponseTime(초, 1분 평균) — 파드당 처리량은 여유인데 응답이 느려질 때 증설.
+    # ⚠️ 병목이 파드 밖(DB 등)이면 늘려도 안 빨라져 max 까지 헛증설 가능 — hpa.max 캡이 안전장치
+    - type: aws-cloudwatch
+      authenticationRef:
+        name: {{ $name }}-aws
+      metadata:
+        namespace: AWS/ApplicationELB
+        metricName: TargetResponseTime
+        dimensionName: TargetGroup;LoadBalancer
+        dimensionValue: {{ $albDims }}
+        metricStat: Average
+        metricStatPeriod: "60"
+        metricCollectionTime: "300"
+        targetMetricValue: {{ .targetSeconds | quote }}
+        minMetricValue: "0"
+        awsRegion: {{ $.Values.keda.awsRegion }}
+    {{- end }}
+    {{- end }}
+    {{- with .Values.keda.sqs }}
+    {{- if .enabled }}
+    # SQS 큐 길이 — 밀린 메시지 ÷ queueLength = 필요 파드수. 워커 서비스용 (큐 도입 시 사용)
+    - type: aws-sqs-queue
+      authenticationRef:
+        name: {{ $name }}-aws
+      metadata:
+        queueURL: {{ required "keda.sqs.queueURL 필수" .queueURL }}
+        queueLength: {{ .queueLength | quote }}
+        awsRegion: {{ $.Values.keda.awsRegion }}
+    {{- end }}
+    {{- end }}
+{{- end }}

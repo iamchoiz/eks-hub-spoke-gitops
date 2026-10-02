@@ -1,0 +1,28 @@
+# dev/api — 골든 차트(../../chart) 대비 차이만
+service: api
+
+image:
+  repository: 111111111111.dkr.ecr.ap-northeast-2.amazonaws.com/demo-api-ecr-dev
+  tag: main-2609272019
+
+probes:
+  path: /api/health
+
+secret:
+  manage: true # ns 당 1곳 — api 가 ExternalSecret 생성 담당 (web 은 참조만)
+  smKey: demo-app-sec-dev
+
+rollout:
+  enabled: true
+  steps: # prod 는 수동 게이트 canary
+    - setWeight: 10
+    - pause: {} # 무기한 — promote 로 진행
+    - setWeight: 50
+    - pause: { duration: 1m }
+
+extraVolumes:
+  - name: uploads
+    emptyDir: {}
+extraVolumeMounts:
+  - name: uploads
+    mountPath: /app/uploads

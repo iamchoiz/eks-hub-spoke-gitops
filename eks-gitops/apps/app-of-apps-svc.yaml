@@ -1,0 +1,23 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: app-of-apps-svc
+  namespace: argocd
+spec:
+  # 루트는 spoke 프로젝트 — 허브(argocd ns)에 살면서 스포크행 워크로드(AppProject·appset)를 관리하는
+  # 성격이 spoke 애드온 루트와 동일. 플랫폼 프로젝트(online-boutique)는 이 앱이 sync 로 만들므로
+  # spoke 프로젝트(기존 존재) 소속이면 부트스트랩 순서 문제 없음. 서비스 앱들만 플랫폼 프로젝트 소속.
+  project: spoke
+  source:
+    repoURL: git@github.com:your-org/eks-hub-spoke-gitops.git
+    path: apps/_appsets # AppProject "apps" + 플랫폼별 appset (플랫폼 1개 = appset 1개, 서비스는 자동 감지)
+    targetRevision: main
+    directory:
+      recurse: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  # syncPolicy:
+  #   automated:
+  #     selfHeal: true
+  #     prune: true # apps/_apps 에서 yaml 지우면 해당 Application 도 제거

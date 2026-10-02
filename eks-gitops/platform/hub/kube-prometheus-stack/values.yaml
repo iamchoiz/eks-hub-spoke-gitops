@@ -1,0 +1,145 @@
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeEtcd:
+  enabled: false
+kubeProxy:
+  enabled: false
+
+prometheus:
+  prometheusSpec:
+    retention: 3d # 로컬 3일 (장기는 Thanos)
+    resources:
+      requests: { cpu: 100m, memory: 1Gi } # 512Mi 는 재시작 WAL replay 때 OOM (2026-10-01 실측)
+      limits: { memory: 2Gi }
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: gp3
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests: { storage: 10Gi }
+    externalLabels:
+      cluster: demo-hub-01 # C6 에서 워크로드 것과 구분
+    remoteWrite:
+      - url: http://thanos-receive-router.monitoring.svc:19291/api/v1/receive
+
+grafana:
+  defaultDashboardsEnabled: false # 기본 대시보드 수십개 끔 (메모리·ConfigMap 대폭↓)
+  # 차트 랜덤 생성 대신 고정 시크릿 참조 — sync 마다 비번 갈려 DB 와 어긋나는 것 방지.
+  # grafana-secrets = ESO 관리 (templates/grafana-externalsecret.yaml, SM demo/platform/hub — SSO+admin 통합).
+  # 사이드카 datasource reload 도 이 비번 사용. ✅ 2026-09-26 수동 grafana-admin → ESO 이관 완료
+  admin:
+    existingSecret: grafana-secrets
+    userKey: admin-user
+    passwordKey: admin-password
+  additionalDataSources:
+    - name: Thanos
+      type: prometheus
+      access: proxy
+      url: http://thanos-query.monitoring.svc:10902
+    - name: Loki # E1 — canary 로그 분리 관측: {namespace="demo-app-prod", app="demo-web", role="canary"}
+      type: loki
+      access: proxy
+      url: http://loki-gateway.monitoring.svc
+  # 큐레이트한 커뮤니티 대시보드 (dotdc "Kubernetes / Views" + Node Exporter Full).
+  # revision 고정 = 재현성. 파드 기동 시 initContainer 가 grafana.com 에서 받아옴(NAT 필요).
+  # datasource=Thanos — cluster 라벨(demo-hub-01)이 Thanos 에만 있어 뷰 변수 동작 + 멀티클러스터(Phase C) 대비.
+  dashboardProviders:
+    dashboardproviders.yaml:
+      apiVersion: 1
+      providers:
+        - name: default
+          orgId: 1
+          folder: ""
+          type: file
+          disableDeletion: false
+          editable: true
+          options:
+            path: /var/lib/grafana/dashboards/default
+  dashboards:
+    default:
+      k8s-views-global: # 전체 성능 현황 (클러스터 CPU/메모리/네트워크 + 워크로드 요약)
+        gnetId: 15757
+        revision: 43
+        datasource: Thanos
+      k8s-views-namespaces: # 네임스페이스별 워크로드 리소스 상황판
+        gnetId: 15758
+        revision: 46
+        datasource: Thanos
+      k8s-views-pods: # 파드 상세 (상태·재시작·리소스)
+        gnetId: 15760
+        revision: 39
+        datasource: Thanos
+      node-exporter-full: # 노드 하드웨어 성능 상세
+        gnetId: 1860
+        revision: 45
+        datasource: Thanos
+  persistence:
+    enabled: true
+    storageClassName: gp3
+    size: 2Gi
+  resources:
+    requests: { cpu: 50m, memory: 256Mi }
+    limits: { memory: 512Mi }
+  # B7 — ALB Ingress. group.name=demo-hub 로 ArgoCD 와 ALB 1개 공유.
+  ingress:
+    enabled: true
+    ingressClassName: alb
+    hosts:
+      - grafana.eks.example.com
+    path: /
+    pathType: Prefix
+    annotations:
+      alb.ingress.kubernetes.io/scheme: internet-facing
+      alb.ingress.kubernetes.io/target-type: ip
+      alb.ingress.kubernetes.io/group.name: demo-hub # ← ArgoCD 와 동일 = ALB 공유
+      alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
+      alb.ingress.kubernetes.io/ssl-redirect: "443"
+      alb.ingress.kubernetes.io/backend-protocol: HTTP
+  # ⭐ GitHub SSO (2026-09-26) — client id/secret 은 env(GF_AUTH_GITHUB_*)로 주입 (아래 envFromSecret).
+  # grafana-secrets(ESO, SSO+admin 통합) — admin-* 키는 env 이름 무효(대시)라 스킵됨, GF_* 만 주입
+  envFromSecret: grafana-secrets
+  # Grafana 가 자기 URL 을 알아야 리다이렉트·링크가 맞음
+  grafana.ini:
+    server:
+      root_url: https://grafana.eks.example.com
+    auth.github:
+      enabled: true
+      allow_sign_up: true # 첫 로그인 시 계정 자동 생성 — 아래 strict 롤 매핑이 외부인 차단 담당
+      scopes: user:email,read:org
+      auth_url: https://github.com/login/oauth/authorize
+      token_url: https://github.com/login/oauth/access_token
+      api_url: https://api.github.com/user
+      # strict = 롤 매핑 안 되면 로그인 거부 (개인 계정의 방어선). 누가 무슨 롤인지는 values-accounts.yaml
+      role_attribute_strict: true
+
+alertmanager:
+  alertmanagerSpec:
+    retention: 24h
+    resources:
+      requests: { cpu: 20m, memory: 64Mi }
+      limits: { memory: 64Mi }
+    storage:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: gp3
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests: { storage: 2Gi }
+
+prometheusOperator:
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { memory: 128Mi }
+
+kube-state-metrics:
+  resources:
+    requests: { cpu: 20m, memory: 64Mi }
+    limits: { memory: 128Mi }
+
+prometheus-node-exporter:
+  resources:
+    requests: { cpu: 20m, memory: 32Mi }
+    limits: { memory: 64Mi }

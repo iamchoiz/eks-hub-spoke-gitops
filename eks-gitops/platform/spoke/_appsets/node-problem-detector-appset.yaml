@@ -1,0 +1,42 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: node-problem-detector
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - clusters:
+        selector:
+          matchLabels:
+            demo.io/workload: "true"
+  template:
+    metadata:
+      name: "node-problem-detector-{{.name}}"
+      annotations:
+        argocd.argoproj.io/sync-wave: "1"
+    spec:
+      project: spoke
+      source:
+        repoURL: https://charts.deliveryhero.io/
+        chart: node-problem-detector
+        targetRevision: 2.3.13
+        helm:
+          valuesObject:
+            # DaemonSet — 모든 노드(system·platform·prod·nonprod)에서 이상 감지해야 하므로
+            # 전 taint tolerate. 안 하면 taint 걸린 노드를 빠뜨림.
+            tolerations:
+              - operator: Exists
+            resources:
+              requests: { cpu: 20m, memory: 32Mi }
+              limits: { memory: 64Mi }
+      destination:
+        server: "{{.server}}"
+        namespace: kube-system
+      syncPolicy:
+        syncOptions:
+          - CreateNamespace=true
+        automated:
+          selfHeal: true
+          prune: true

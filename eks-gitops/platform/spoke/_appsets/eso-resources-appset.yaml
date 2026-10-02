@@ -1,0 +1,31 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: eso-resources
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - clusters:
+        selector:
+          matchLabels:
+            demo.io/workload: "true"
+  template:
+    metadata:
+      name: "eso-resources-{{.name}}"
+      annotations:
+        argocd.argoproj.io/sync-wave: "3" # external-secrets(wave 1) 뒤 — ClusterSecretStore CRD 필요
+    spec:
+      project: spoke
+      source:
+        repoURL: git@github.com:your-org/eks-hub-spoke-gitops.git
+        path: platform/spoke/eso-resources # ClusterSecretStore (cluster-scoped)
+        targetRevision: main
+      destination:
+        server: "{{.server}}"
+        namespace: external-secrets # cluster-scoped 라 무시되지만 필수 필드
+      syncPolicy:
+        automated:
+          selfHeal: true
+          prune: true
