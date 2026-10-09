@@ -1,0 +1,50 @@
+# ⭐ Alertmanager 설정 본문 — 라우팅·수신자·억제 규칙은 전부 이 파일에서 수정한다.
+# 소비: alertmanager-externalsecret.yaml 의 templateFrom 이 이 ConfigMap 을 ESO 템플릿으로 렌더
+#   → {{ .slack_webhook_url }}·{{ .slack_channel }} 에 SM(demo/platform/hub) 값 주입 → Secret alertmanager-config.
+# ⚠️ ESO 렌더러 = Go template → Alertmanager 자체 템플릿 {{ }} 는 {{ `백틱` }} 로 감싸 원형 통과 (렌더 시뮬 검증됨).
+# 반영 시점: 이 파일 수정 → sync → ESO refresh(1h, 급하면 ES 에 force-sync 어노테이션) → config-reloader 자동 리로드.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alertmanager-config-template
+  namespace: monitoring
+data:
+  alertmanager.yaml: |
+    global:
+      resolve_timeout: 5m
+    route:
+      receiver: slack-warning # 기본 수신 = 🟡 (라우트에 안 걸린 전부)
+      group_by: ["alertname", "cluster", "namespace"]
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 12h
+      routes:
+        - receiver: "null" # Watchdog(상시 발화) — Phase 6 에서 healthchecks.io receiver 로 교체 (TODO)
+          matchers: ["alertname = Watchdog"]
+        - receiver: "null" # kps 내장 InfoInhibitor 신호용 — 알림으로 안 내보냄
+          matchers: ["alertname = InfoInhibitor"]
+        - receiver: slack-critical # 🔴 — Phase 4 에서 PagerDuty receiver 추가 예정
+          matchers: ["severity = critical"]
+    receivers:
+      - name: "null"
+      - name: slack-critical
+        slack_configs:
+          - api_url: {{ .slack_webhook_url | quote }}
+            channel: {{ .slack_channel | quote }}
+            send_resolved: true # 해소 시 resolved 메시지도 발송
+            title: '{{ `🔴 [{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}] {{ .CommonLabels.alertname }} ({{ .CommonLabels.cluster }})` }}'
+            text: '{{ `{{ range .Alerts }}• {{ .Annotations.summary }}{{ if .Annotations.runbook_url }} — <{{ .Annotations.runbook_url }}|runbook>{{ end }}{{ "\n" }}{{ end }}` }}'
+      - name: slack-warning
+        slack_configs:
+          - api_url: {{ .slack_webhook_url | quote }}
+            channel: {{ .slack_channel | quote }}
+            send_resolved: true
+            title: '{{ `🟡 [{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}] {{ .CommonLabels.alertname }} ({{ .CommonLabels.cluster }})` }}'
+            text: '{{ `{{ range .Alerts }}• {{ .Annotations.summary }}{{ if .Annotations.runbook_url }} — <{{ .Annotations.runbook_url }}|runbook>{{ end }}{{ "\n" }}{{ end }}` }}'
+    inhibit_rules:
+      - source_matchers: ["severity = critical"] # 같은 대상의 critical 발화 중이면 warning 침묵 (폭풍 방지)
+        target_matchers: ["severity = warning"]
+        equal: ["alertname", "cluster", "namespace"]
+      - source_matchers: ["alertname = InfoInhibitor"] # kps 기본 동작 유지 — info 노이즈 억제
+        target_matchers: ["severity = info"]
+        equal: ["namespace"]

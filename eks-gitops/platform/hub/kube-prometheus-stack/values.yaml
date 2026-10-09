@@ -43,6 +43,13 @@ grafana:
       type: loki
       access: proxy
       url: http://loki-gateway.monitoring.svc
+    - name: Alertmanager # 전체 알림 대시보드 — Grafana Alerting 메뉴에서 firing/silence 조회·관리 (SSO 뒤)
+      type: alertmanager
+      access: proxy
+      url: http://kube-prometheus-stack-alertmanager.monitoring.svc:9093
+      jsonData:
+        implementation: prometheus
+        handleGrafanaManagedAlerts: false # Grafana 자체 룰 엔진은 안 씀 (룰 = PrometheusRule 단일)
   # 큐레이트한 커뮤니티 대시보드 (dotdc "Kubernetes / Views" + Node Exporter Full).
   # revision 고정 = 재현성. 파드 기동 시 initContainer 가 grafana.com 에서 받아옴(NAT 필요).
   # datasource=Thanos — cluster 라벨(demo-hub-01)이 Thanos 에만 있어 뷰 변수 동작 + 멀티클러스터(Phase C) 대비.
@@ -116,8 +123,15 @@ grafana:
       role_attribute_strict: true
 
 alertmanager:
+  # ─── 배차 (ALERTING-PLAN Phase 1) ───
+  # config 는 values 가 아니라 ESO 소유 — templates/alertmanager-externalsecret.yaml 이
+  # alertmanager.yaml 통짜를 렌더 (Slack webhook·channel 을 SM demo/platform/hub 에서 주입).
+  # 여기는 그 Secret 을 쓰라는 지정만 한다. 라우팅·수신자 수정 = templates/alertmanager-config-template.yaml.
   alertmanagerSpec:
+    replicas: 1 # 시작은 1 (HA 2 는 추후 — gossip 은 replicas 만 올리면 operator 가 자동)
     retention: 24h
+    useExistingSecret: true # chart 생성 secret 끔 — 아래 configSecret 사용
+    configSecret: alertmanager-config # ESO 가 만든 Secret (키: alertmanager.yaml)
     resources:
       requests: { cpu: 20m, memory: 64Mi }
       limits: { memory: 64Mi }
