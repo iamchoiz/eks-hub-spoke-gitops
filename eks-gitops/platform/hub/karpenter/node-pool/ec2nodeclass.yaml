@@ -5,7 +5,7 @@ metadata:
 spec:
   # AMI 버전 핀 (@latest 금지 원칙). F5 에서 이 버전을 올려 drift 교체 연습.
   amiSelectorTerms:
-    - alias: bottlerocket@1.65.0
+    - alias: bottlerocket@1.66.0
   role: demo-hub-01-karpenter-node # 모듈이 만든 노드 role (Karpenter 가 instance profile 자동 생성)
   subnetSelectorTerms:
     - tags:

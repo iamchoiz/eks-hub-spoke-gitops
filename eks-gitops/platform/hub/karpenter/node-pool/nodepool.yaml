@@ -34,6 +34,15 @@ spec:
     consolidationPolicy: WhenEmptyOrUnderutilized
     consolidateAfter: 1m
     budgets:
-      - nodes: "10%" # 동시 교체 상한 (한꺼번에 안 비우게)
+      - nodes: "10%" # consolidation 등 (사유 무관) 동시 교체 상한 (한꺼번에 안 비우게)
+      # AMI 교체(Drifted) = 새벽 정비창(KST 00~06)에만 1대씩 (2026-10-09).
+      # 허브도 ArgoCD·관측이 platform 노드에 떠서 업무시간 교체 금지. budget 은 min 적용이라
+      # 창으로 "열" 수 없음 → 1 을 항상 깔고, 교체 금지 시간(06~24)을 0 으로 덮어 00~06 만 남긴다.
+      - nodes: "1" # Drifted 기본 상한 (항상)
+        reasons: [Drifted]
+      - nodes: "0" # KST 06~24 차단 → 00~06 만 교체 허용
+        schedule: "0 21 * * *" # UTC 21:00 = KST 06:00 (매일)
+        duration: 18h # 18h → KST 자정까지 차단
+        reasons: [Drifted]
   limits:
     cpu: "16" # 학습용 폭주 방지 상한
