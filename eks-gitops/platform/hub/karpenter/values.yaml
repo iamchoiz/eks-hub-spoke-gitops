@@ -21,3 +21,9 @@ karpenter:
       requests:
         cpu: 200m
         memory: 256Mi
+
+  # 알림 Phase 2 — 컨트롤러 메트릭 수집 (nodeclaim·cloudprovider 에러·disruption)
+  serviceMonitor:
+    enabled: true
+    additionalLabels:
+      release: kube-prometheus-stack # kps Prometheus selector 매칭

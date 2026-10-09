@@ -29,6 +29,16 @@ argo-cd:
 
     # RBAC(계정/권한 장부)은 values-accounts.yaml 로 분리 — 사람 관리는 그 파일만 커밋
 
+  # 알림 Phase 2 — application-controller 메트릭 노출 (argocd_app_info: 앱 health/sync 상태)
+  # ServiceMonitor 라벨 release=kube-prometheus-stack = kps Prometheus 의 selector 매칭 (실측)
+  controller:
+    metrics:
+      enabled: true
+      serviceMonitor:
+        enabled: true
+        additionalLabels:
+          release: kube-prometheus-stack
+
   # B7 — ALB Ingress. group.name=demo-hub 로 Grafana 와 ALB 1개 공유.
   server:
     ingress:

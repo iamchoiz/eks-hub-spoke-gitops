@@ -1,0 +1,77 @@
+# 알림 Phase 2 — 플랫폼 커스텀 룰 (kps 기본 룰이 안 커버하는 것만. 노드·파드·PVC·OOM 은 기본 룰 소유)
+# 라벨 release=kube-prometheus-stack = Prometheus CR 의 ruleSelector 매칭 (실측) — 빠지면 룰이 안 읽힌다.
+# severity 라벨이 Alertmanager 라우팅 결정: critical → 🔴 slack-critical / warning → 🟡 slack-warning.
+# runbook_url 은 알람별 런북 작성 시 채움 (ALERTING-PLAN Phase 2 산출물).
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: platform-alerts
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: platform.dns
+      rules:
+        - alert: CoreDNSDown
+          expr: absent(up{job="coredns"} == 1)
+          for: 5m
+          labels: { severity: critical }
+          annotations:
+            summary: "CoreDNS 수집 불가 5분 — 클러스터 DNS 전체 영향 (신규 커넥션·서비스 디스커버리 마비 위험)"
+
+    - name: platform.thanos
+      rules:
+        - alert: ThanosReceiveDown
+          expr: absent(up{job="thanos-receive-ingestor"} == 1)
+          for: 10m
+          labels: { severity: critical }
+          annotations:
+            summary: "Thanos Receive(ingestor) 다운 10분 — 허브 메트릭 유입 중단 (이 시간대 관측 공백 발생 중)"
+        - alert: ThanosQueryDown
+          expr: absent(up{job="thanos-query"} == 1)
+          for: 10m
+          labels: { severity: warning }
+          annotations:
+            summary: "Thanos Query 다운 10분 — Grafana 대시보드·멀티클러스터 조회 불가 (수집은 계속됨)"
+        - alert: ThanosCompactHalted
+          expr: thanos_compact_halted == 1
+          for: 15m
+          labels: { severity: warning }
+          annotations:
+            summary: "Thanos Compactor 중단(halted) — S3 블록 정리 멈춤, 방치 시 스토리지 비용 증가·쿼리 성능 저하"
+
+    - name: platform.argocd
+      rules:
+        - alert: ArgoCDMetricsAbsent
+          expr: absent(argocd_app_info)
+          for: 10m
+          labels: { severity: critical }
+          annotations:
+            summary: "argocd_app_info 메트릭 부재 10분 — application-controller 다운 또는 수집 경로 단절 (GitOps 배포 정지 가능)"
+        - alert: ArgoCDAppDegraded
+          expr: sum by (name) (argocd_app_info{health_status="Degraded"}) > 0
+          for: 15m
+          labels: { severity: critical }
+          annotations:
+            summary: "ArgoCD 앱 {{ $labels.name }} Degraded 15분 지속 — 워크로드 비정상 (파드 크래시·프로브 실패 류)"
+        - alert: ArgoCDAppOutOfSync
+          expr: sum by (name) (argocd_app_info{sync_status="OutOfSync"}) > 0
+          for: 1h
+          labels: { severity: warning }
+          annotations:
+            summary: "ArgoCD 앱 {{ $labels.name }} OutOfSync 1시간 지속 — git↔클러스터 드리프트 방치 상태 (SSA 기본값 족보인지 먼저 확인)"
+
+    - name: platform.karpenter
+      rules:
+        - alert: KarpenterDown
+          expr: absent(up{job="karpenter"} == 1)
+          for: 10m
+          labels: { severity: critical }
+          annotations:
+            summary: "Karpenter 컨트롤러 다운 10분 — 노드 증설·회수 정지 (Pending 파드 적체, spot 회수 대응 불가)"
+        - alert: KarpenterCloudProviderErrors
+          expr: increase(karpenter_cloudprovider_errors_total[15m]) > 3
+          labels: { severity: warning }
+          annotations:
+            summary: "Karpenter AWS API 에러 15분 내 {{ $value }}건 — ICE(스팟 고갈)·IAM·쿼터 문제 가능 (nodeclaim 이벤트 확인)"

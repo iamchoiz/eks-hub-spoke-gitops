@@ -1,3 +1,11 @@
+# 알림 Phase 2 — kps 기본 룰 취사선택: 우리 환경에서 "상시 발화 = 무시 훈련"이 되는 룰만 끈다 (알림 피로 방지).
+# Overcommit 2종 = 고정 MNG 소수 노드 + Karpenter 증설 구조라 항상 참 → 비행동성 노이즈.
+# KubeletTooManyPods 는 유지 (max-pods 17 실사고 이력 — 행동 가능한 신호).
+defaultRules:
+  disabled:
+    KubeMemoryOvercommit: true
+    KubeCPUOvercommit: true
+
 kubeControllerManager:
   enabled: false
 kubeScheduler:
