@@ -46,7 +46,15 @@ spec:
     consolidationPolicy: WhenEmptyOrUnderutilized
     consolidateAfter: 1m
     budgets:
-      - nodes: "10%"
+      - nodes: "10%" # consolidation 등 (사유 무관) 동시 교체 상한 — 기존 유지
+      # AMI 교체(Drifted) = 새벽 정비창(KST 00~06)에만 1대씩 (2026-10-09).
+      # budget 은 min 적용이라 창으로 "열" 수 없음 → 1 을 항상 깔고, 교체 금지 시간(06~24)을 0 으로 덮어 00~06 만 남긴다.
+      - nodes: "1" # Drifted 기본 상한 (항상)
+        reasons: [Drifted]
+      - nodes: "0" # KST 06~24 차단 → 00~06 만 교체 허용
+        schedule: "0 21 * * *" # UTC 21:00 = KST 06:00 (매일)
+        duration: 18h # 18h → KST 자정까지 차단
+        reasons: [Drifted]
   limits:
     cpu: "16"
 ---
@@ -100,7 +108,15 @@ spec:
     consolidationPolicy: WhenEmptyOrUnderutilized
     consolidateAfter: 1m
     budgets:
-      - nodes: "10%" # prod 는 보수적으로 동시 교체 제한
+      - nodes: "10%" # consolidation 등 (사유 무관) — prod 는 보수적으로 동시 교체 제한
+      # AMI 교체(Drifted) = 새벽 정비창(KST 00~06)에만 1대씩 (2026-10-09).
+      # budget 은 min 적용이라 창으로 "열" 수 없음 → 1 을 항상 깔고, 교체 금지 시간(06~24)을 0 으로 덮어 00~06 만 남긴다.
+      - nodes: "1" # Drifted 기본 상한 (항상)
+        reasons: [Drifted]
+      - nodes: "0" # KST 06~24 차단 → 00~06 만 교체 허용
+        schedule: "0 21 * * *" # UTC 21:00 = KST 06:00 (매일)
+        duration: 18h # 18h → KST 자정까지 차단
+        reasons: [Drifted]
   limits:
     cpu: "16" # 학습용 폭주 방지
 ---
@@ -154,6 +170,9 @@ spec:
     consolidationPolicy: WhenEmptyOrUnderutilized
     consolidateAfter: 1m # nonprod 는 공격적 정리
     budgets:
-      - nodes: "50%"
+      - nodes: "50%" # consolidation 등 (사유 무관) — nonprod 는 느슨
+      # AMI 교체(Drifted)도 1대씩만 (관찰용) — 창 없음: nonprod 는 아무 때나 흘려 리허설 1순위로 관찰
+      - nodes: "1"
+        reasons: [Drifted]
   limits:
     cpu: "16"

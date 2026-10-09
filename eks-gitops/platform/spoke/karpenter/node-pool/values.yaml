@@ -6,6 +6,6 @@ clusterName: ""
 # 교체 순서 원칙: default(nonprod·platform) 먼저 → 관찰 → prod. 한 커밋에 한 계통만.
 nodeClasses:
   default: # NodePool platform · nonprod
-    amiAlias: bottlerocket@1.65.0
+    amiAlias: bottlerocket@1.66.0
   prod: # NodePool prod
-    amiAlias: bottlerocket@1.65.0
+    amiAlias: bottlerocket@1.66.0
