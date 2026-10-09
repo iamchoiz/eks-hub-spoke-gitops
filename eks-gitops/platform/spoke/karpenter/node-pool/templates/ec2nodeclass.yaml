@@ -1,15 +1,24 @@
 {{- if not .Values.clusterName }}{{ fail "clusterName 미주입 — appset helm.valuesObject 확인" }}{{- end }}
+{{- /*
+  EC2NodeClass 를 풀 계통별로 분리 (2026-10-08) — default(platform·nonprod) / prod.
+  공유 1개면 alias 한 줄에 3풀이 동시 drift → prod·nonprod 가 같이 교체됨.
+  분리 후 AMI 교체 = values.yaml nodeClasses.<이름>.amiAlias 만 바꿔서 계통별로 순차 진행.
+  나머지 spec(role·subnet·SG)은 계통 간 동일해야 하므로 한 블록에서 찍는다.
+*/}}
+{{- range $name, $nc := .Values.nodeClasses }}
+---
 apiVersion: karpenter.k8s.aws/v1
 kind: EC2NodeClass
 metadata:
-  name: default
+  name: {{ $name }}
 spec:
   amiSelectorTerms:
-    - alias: bottlerocket@1.65.0 # 허브와 동일 버전 핀 (@latest 금지). F5 에서 drift 교체 연습
-  role: {{ .Values.clusterName }}-karpenter-node # eks-cluster 모듈이 만든 노드 role (클러스터별)
+    - alias: {{ required (printf "nodeClasses.%s.amiAlias 필수" $name) $nc.amiAlias }} # @latest 금지 — 버전 핀
+  role: {{ $.Values.clusterName }}-karpenter-node # eks-cluster 모듈이 만든 노드 role (클러스터별)
   subnetSelectorTerms:
     - tags:
         karpenter.sh/discovery: demo # 서브넷은 공유 자원 (클러스터 이름 아님)
   securityGroupSelectorTerms:
     - tags:
-        karpenter.sh/discovery: {{ .Values.clusterName }} # 클러스터 SG 태그 (모듈이 클러스터명으로 붙임)
+        karpenter.sh/discovery: {{ $.Values.clusterName }} # 클러스터 SG 태그 (모듈이 클러스터명으로 붙임)
+{{- end }}

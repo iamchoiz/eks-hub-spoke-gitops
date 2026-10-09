@@ -94,7 +94,7 @@ spec:
       nodeClassRef:
         group: karpenter.k8s.aws
         kind: EC2NodeClass
-        name: default
+        name: prod # prod 전용 계통 — AMI 를 nonprod 검증 후 따로 올리기 위해 분리
       expireAfter: 720h # 30일 — 노드 순환
   disruption:
     consolidationPolicy: WhenEmptyOrUnderutilized

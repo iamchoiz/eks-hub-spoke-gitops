@@ -10,10 +10,15 @@ nodeEnv: prod
 # replicas 는 HPA 소유라 미기재 — min 이 사실상 상시 대수 (이 밑으론 안 내려감)
 hpa:
   enabled: true
-  min: 1
+  min: 2 # PDB 와 세트 (2026-10-09) — min 1 이면 PDB 가 drain 데드락, 2 라야 1개 유지하며 1개 evict
   max: 4
   cpu: 70
-# pdb 는 보류(2026-09-27 운영 결정) — hpa.min 1 과 조합 시 drain 데드락. 켤 땐 hpa.min 2 와 세트로
+
+# 노드 drain(spot 교체·AMI 업그레이드·consolidation) 중에도 최소 1개 유지.
+# minAvailable 1 로 느슨하게 — 빡세면(maxUnavailable 작게) consolidation 이 파드 evict 못 해 노드 회수 막힘.
+pdb:
+  enabled: true
+  minAvailable: 1
 
 # KEDA — api 는 ALB 뒤가 아님(web 이 http://demo-api 로 내부 프록시) → request count 트리거 불가.
 # CPU baseline 만으로 쓰려면 hpa 로 충분. keda 는 SQS 워커 도입 or Prometheus RPS 계측 때 발동:

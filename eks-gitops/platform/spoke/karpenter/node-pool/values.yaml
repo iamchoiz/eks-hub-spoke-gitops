@@ -1,3 +1,11 @@
 # clusterName 은 karpenter-node-pool-appset.yaml 의 helm.valuesObject 가 {{.name}} 으로 주입.
 # 여기 기본값을 두지 않는다 — 미주입 시 렌더 에러로 실수를 잡기 위함 (required).
 clusterName: ""
+
+# EC2NodeClass 계통별 AMI 핀 (Bottlerocket OS 버전 — k8s variant 는 CP 버전을 자동으로 따라감).
+# 교체 순서 원칙: default(nonprod·platform) 먼저 → 관찰 → prod. 한 커밋에 한 계통만.
+nodeClasses:
+  default: # NodePool platform · nonprod
+    amiAlias: bottlerocket@1.65.0
+  prod: # NodePool prod
+    amiAlias: bottlerocket@1.65.0
